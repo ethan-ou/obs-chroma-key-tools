@@ -1,0 +1,72 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+
+uniform float spill<
+    string label = "Spill Reduction";
+    string widget_type = "slider";
+    float minimum = 0;
+    float maximum = 1.0;
+    float step = 0.001;
+> = 0.5;
+
+uniform float chroma_hue<
+    string label = "Hue Rotation";
+    string widget_type = "slider";
+    float minimum = 0;
+    float maximum = 1;
+    float step = 0.001;
+> = 0.333;
+
+sampler_state textureSampler {
+	Filter    = Linear;
+	AddressU  = Clamp;
+	AddressV  = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+float3 ApplyHue(float3 col, float hueAdjust)
+{
+	float3 sqrt3_3 = float3(0.57735, 0.57735, 0.57735);
+  float normalizedHue = hueAdjust * 6.28318530718;
+	float cosAngle = cos(normalizedHue);
+	// Rodrigues' rotation formula
+	return col * cosAngle + cross(sqrt3_3, col) * sin(normalizedHue) + sqrt3_3 * dot(sqrt3_3, col) * (1.0 - cosAngle);
+}
+
+float4 PSDespill(VertData v_in) : TARGET
+{
+	float4 rgba = image.Sample(textureSampler, v_in.uv);
+
+   // Shift so the chroma hue (that we want to remove) is always red.
+  float3 normalizedRGB = ApplyHue(rgba.rgb, -chroma_hue);
+
+  // Then limit the red channel to the average of the green and blue channels.
+  float v = (normalizedRGB.g + normalizedRGB.b) / 2;
+  if(normalizedRGB.r > v) normalizedRGB.r = v;
+
+  // Now shift the hue back, and interpolate based on the spill value.
+  rgba.rgb = lerp(rgba.rgb, ApplyHue(normalizedRGB, chroma_hue), spill);
+	
+  return rgba
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSDespill(v_in);
+	}
+}
