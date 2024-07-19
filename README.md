@@ -2,7 +2,7 @@
 
 A shader to reduce any colour spill from a chroma key background.
 
-> This code is almost entirely from a [pull request to obs-studio](https://github.com/janpaul123/obs-studio/blob/063fdc0306dfae24d8c084a44e895f30517472a4/plugins/obs-filters/data/chroma_key_filter.effect) made by @janpaul123. All credit should be his.
+> This code is almost entirely from a [pull request](https://github.com/janpaul123/obs-studio/blob/063fdc0306dfae24d8c084a44e895f30517472a4/plugins/obs-filters/data/chroma_key_filter.effect) made by @janpaul123 to obs-studio. All credit should be his.
 
 ## Usage
 
