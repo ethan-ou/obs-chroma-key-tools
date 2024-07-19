@@ -59,7 +59,7 @@ float4 PSDespill(VertData v_in) : TARGET
   // Now shift the hue back, and interpolate based on the spill value.
   rgba.rgb = lerp(rgba.rgb, ApplyHue(normalizedRGB, chroma_hue), spill);
 	
-  return rgba
+  return rgba;
 }
 
 technique Draw
