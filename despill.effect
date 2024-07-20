@@ -1,6 +1,11 @@
 uniform float4x4 ViewProj;
 uniform texture2d image;
 
+uniform float3 spill_color <
+  string label = "Spill Color";
+  string widget_type = "color";
+> = {0.0, 1.0, 0.0};
+
 uniform float spill <
   string label = "Spill Reduction";
   string widget_type = "slider";
@@ -9,12 +14,15 @@ uniform float spill <
   float step = 0.001;
 > = 0.666;
 
-uniform float chroma_hue <
-  string label = "Hue Rotation";
-  string widget_type = "slider";
-  float minimum = -1;
-  float maximum = 1;
-  float step = 0.001;
+uniform int type <
+  string label = "Type";
+  string widget_type = "select";
+  int option_0_value = 0;
+  string option_0_label = "Average";
+  int option_1_value = 1;
+  string option_1_label = "Maximum";
+  int option_2_value = 2;
+  string option_2_label = "Minimum";
 > = 0;
 
 uniform float luminance_correction <
@@ -25,25 +33,15 @@ uniform float luminance_correction <
   float step = 0.001;
 > = 0.666;
 
-uniform int type <
-  string label = "Type";
-  string widget_type = "select";
-  int option_0_value = 0;
-  string option_0_label = "Average";
-  int option_1_value = 1;
-  string option_1_label = "Double Red Average";
-  int option_2_value = 2;
-  string option_2_label = "Double Blue Average";
-  int option_3_value = 3;
-  string option_3_label = "Blue Limit";
-  int option_4_value = 4;
-  string option_4_label = "Red Limit";
-> = 0;
+uniform float3 luminance_color <
+  string label = "Luminance Color";
+  string widget_type = "color";
+> = {1.0, 0.5, 1.0};
 
 uniform int edge_shrink <
   string label = "Shrink Edges";
   string widget_type = "slider";
-  int minimum = 1;
+  int minimum = 0;
   int maximum = 20;
   int step = 1;
 > = 5;
@@ -77,6 +75,27 @@ VertData VSDefault(VertData v_in)
   return vert_out;
 }
 
+float3 GetHue(float3 col)
+{
+  float minimum = min(min(col.r, col.g), col.b);
+  float maximum = max(max(col.r, col.g), col.b);
+  if (minimum == maximum) {
+    return 0.0;
+  }
+
+  float hue;
+  if (maximum == col.r) {
+    hue = (col.g - col.b) / (maximum - minimum);
+  } else if (maximum == col.g) {
+    hue = 2.0 + (col.b - col.r) / (maximum - minimum);
+  } else {
+    hue = 4.0 + (col.r - col.g) / (maximum - minimum);
+  }
+
+  hue = hue * 0.1666666666666667;
+  return hue;
+}
+
 float3 ApplyHue(float3 col, float hueAdjust)
 {
   float3 sqrt3_3 = float3(0.57735, 0.57735, 0.57735);
@@ -91,36 +110,31 @@ float4 PSDespill(VertData v_in) : TARGET
     float4 rgba = image.Sample(textureSampler, v_in.uv);
 
     // Shift so the chroma hue (that we want to remove) is always red.
-    float3 normalizedRGB = ApplyHue(rgba.rgb, -chroma_hue);
+    float hue = GetHue(spill_color);
+    float3 normalizedRGB = ApplyHue(rgba.rgb, -hue);
 
     float v;
     if (type == 1) {
-      // Double Red Average
-      v = (normalizedRGB.r * 2 + normalizedRGB.b) * 0.333333;
-      if (normalizedRGB.g > v) normalizedRGB.g = v;
+      // Maximum
+      v = max(normalizedRGB.g, normalizedRGB.b);
+      if (normalizedRGB.r > v) normalizedRGB.r = v;
     } else if (type == 2) {
-      // Double Blue Average
-      v = (normalizedRGB.r + normalizedRGB.b * 2) * 0.333333;
-      if (normalizedRGB.g > v) normalizedRGB.g = v;
-    } else if (type == 3) {
-      // Blue Limit
-      if (normalizedRGB.g > normalizedRGB.b) normalizedRGB.g = normalizedRGB.b;
-    } else if (type == 4) {
-      // Red Limit
-      if (normalizedRGB.g > normalizedRGB.r) normalizedRGB.g = normalizedRGB.r;
+      // Minimum
+      v = min(normalizedRGB.g, normalizedRGB.b);
+      if (normalizedRGB.r > v) normalizedRGB.r = v;
     } else {
       // Average
-      v = (normalizedRGB.r + normalizedRGB.b) * 0.5;
-      if (normalizedRGB.g > v) normalizedRGB.g = v;
+      v = (normalizedRGB.g + normalizedRGB.b) * 0.5;
+      if (normalizedRGB.r > v) normalizedRGB.r = v;
     }
 
     // Now shift the hue back, and interpolate based on the spill value.
-    float3 rgb = lerp(rgba.rgb, ApplyHue(normalizedRGB, chroma_hue), spill);
+    float3 rgb = lerp(rgba.rgb, ApplyHue(normalizedRGB, hue), spill);
 
     float3 difference = abs(rgb - rgba.rgb);
     // Calculate luminance according to BT.709
     float luminance = (difference.r) * 0.2126 + (difference.g) * 0.7152 + (difference.b) * 0.0722;
-    rgba.rgb = rgb + (luminance * luminance_correction * rgba.a);
+    rgba.rgb = rgb + (luminance * luminance_correction) * luminance_color;
 
     // Edge Shrink and Sharpness
     if (edge_shrink > 0) {
