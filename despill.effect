@@ -133,8 +133,8 @@ float4 PSDespill(VertData v_in) : TARGET
 
     float3 difference = abs(rgb - rgba.rgb);
     // Calculate luminance according to BT.709
-    float luminance = (difference.r) * 0.2126 + (difference.g) * 0.7152 + (difference.b) * 0.0722;
-    rgba.rgb = rgb + (luminance * luminance_correction) * luminance_color;
+    float luminance =  luminance_correction * ((difference.r) * 0.2126 + (difference.g) * 0.7152 + (difference.b) * 0.0722);
+    rgba.rgb = rgb + luminance * luminance_color;
 
     // Edge Shrink and Sharpness
     if (edge_shrink > 0) {
