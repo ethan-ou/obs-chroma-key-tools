@@ -37,7 +37,7 @@ uniform int edge_blur <
     string group = "Chroma Key";
     int minimum = 0;
     int maximum = 10;
-> = 2;
+> = 1;
 
 uniform bool output_alpha <
   string label = "Output Alpha";
