@@ -1,6 +1,3 @@
-uniform float4x4 ViewProj;
-uniform texture2d image;
-
 uniform float3 key_color <
   string label = "Key Color";
   string widget_type = "color";
@@ -34,14 +31,13 @@ uniform float smoothness_power <
   float step = 0.001;
 > = 1.5;
 
-uniform float edge_blur <
+uniform int edge_blur <
     string label = "Edge Blur";
     string widget_type = "slider";
     string group = "Chroma Key";
-    float minimum = 0.0;
-    float maximum = 10.0;
-    float step = 1.0;
-> = 2.0;
+    int minimum = 0;
+    int maximum = 10;
+> = 2;
 
 uniform bool output_alpha <
   string label = "Output Alpha";
@@ -88,7 +84,7 @@ uniform int spill_type <
 > = 0;
 
 uniform float luminance_correction <
-  string label = "Lum Correction";
+  string label = "Luminance Correction";
   string widget_type = "slider";
   string group = "Spill Reduction";
   float minimum = 0;
@@ -97,32 +93,10 @@ uniform float luminance_correction <
 > = 0.666;
 
 uniform float3 luminance_color <
-  string label = "Lum Color";
+  string label = "Luminance Color";
   string widget_type = "color";
   string group = "Spill Reduction";
 > = {1.0, 0.5, 1.0};
-
-uniform float2 uv_pixel_interval;
-uniform float2 uv_size;
-
-sampler_state textureSampler {
-  Filter = Linear;
-  AddressU = Clamp;
-  AddressV = Clamp;
-};
-
-struct VertData {
-  float4 pos : POSITION;
-  float2 uv : TEXCOORD0;
-};
-
-VertData VSDefault(VertData v_in)
-{
-  VertData vert_out;
-  vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
-  vert_out.uv = v_in.uv;
-  return vert_out;
-}
 
 float3 GetHue(float3 col)
 {
@@ -180,14 +154,14 @@ float BlurChromaKey(float4 rgba, VertData v_in)
   }
 
   float Pi = 6.28318530718; // Pi*2
-  float Quality = 2.0;
-  float Directions = 8.0;
+  float quality = 2.0;
+  float directions = 8.0;
 
   float transparent = ChromaKey(rgba);
   int count = 1;
 
-  [loop] for(float d = 0.0; d < Pi; d += Pi / Directions) {
-    [loop] for(float i = 1.0 / Quality; i <= 1.0; i += 1.0 / Quality) {
+  [loop] for(float d = 0.0; d < Pi; d += Pi / directions) {
+    [loop] for(float i = 1.0 / quality; i <= 1.0; i += 1.0 / quality) {
       float sc = ChromaKey(image.Sample(textureSampler, v_in.uv + float2(cos(d), sin(d)) * edge_blur * i / uv_size));
       transparent += sc;
       count++;
@@ -197,49 +171,40 @@ float BlurChromaKey(float4 rgba, VertData v_in)
   return transparent / count;
 }
 
-float4 PSDespill(VertData v_in) : TARGET
-  {
-    float4 rgba = image.Sample(textureSampler, v_in.uv);
-    rgba.a = BlurChromaKey(rgba, v_in);
+float4 mainImage(VertData v_in) : TARGET
+{
+  float4 rgba = image.Sample(textureSampler, v_in.uv);
+  rgba.a = BlurChromaKey(rgba, v_in);
 
-    // Shift so the chroma hue (that we want to remove) is always red.
-    float hue = GetHue(key_color);
-    float3 normalizedRGB = ApplyHue(rgba.rgb, -hue);
+  // Shift so the chroma hue (that we want to remove) is always red.
+  float hue = GetHue(key_color);
+  float3 normalizedRGB = ApplyHue(rgba.rgb, -hue);
 
-    float v;
-    if (spill_type == 1) {
-      // Maximum
-      v = max(normalizedRGB.g, normalizedRGB.b);
-      if (normalizedRGB.r > v) normalizedRGB.r = v;
-    } else if (spill_type == 2) {
-      // Minimum
-      v = min(normalizedRGB.g, normalizedRGB.b);
-      if (normalizedRGB.r > v) normalizedRGB.r = v;
-    } else {
-      // Average
-      v = (normalizedRGB.g + normalizedRGB.b) * 0.5;
-      if (normalizedRGB.r > v) normalizedRGB.r = v;
-    }
-
-    // Now shift the hue back, and interpolate based on the spill value.
-    float3 rgb = lerp(rgba.rgb, ApplyHue(normalizedRGB, hue), spill);
-
-    float3 difference = abs(rgb - rgba.rgb);
-    // Calculate luminance according to BT.709
-    float luminance = luminance_correction * dot(difference, float3(0.2126, 0.7152, 0.0722));
-    rgba.rgb = rgb + luminance * luminance_color;
-
-    if (output_alpha) {
-      rgba.rgb = rgba.a;
-    }
-    return rgba;
+  float v;
+  if (spill_type == 1) {
+    // Maximum
+    v = max(normalizedRGB.g, normalizedRGB.b);
+    if (normalizedRGB.r > v) normalizedRGB.r = v;
+  } else if (spill_type == 2) {
+    // Minimum
+    v = min(normalizedRGB.g, normalizedRGB.b);
+    if (normalizedRGB.r > v) normalizedRGB.r = v;
+  } else {
+    // Average
+    v = (normalizedRGB.g + normalizedRGB.b) * 0.5;
+    if (normalizedRGB.r > v) normalizedRGB.r = v;
   }
 
-  technique Draw
-  {
-    pass
-      {
-        vertex_shader = VSDefault(v_in);
-        pixel_shader = PSDespill(v_in);
-      }
+  // Now shift the hue back, and interpolate based on the spill value.
+  float3 rgb = lerp(rgba.rgb, ApplyHue(normalizedRGB, hue), spill);
+
+  float3 difference = abs(rgb - rgba.rgb);
+  // Calculate luminance according to BT.709
+  float luminance = luminance_correction * dot(difference, float3(0.2126, 0.7152, 0.0722));
+  rgba.rgb = rgb + luminance * luminance_color;
+
+  if (output_alpha) {
+    rgba.rgb = rgba.a;
   }
+  return rgba;
+}
