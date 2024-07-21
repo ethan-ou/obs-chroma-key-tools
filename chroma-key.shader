@@ -147,9 +147,10 @@ float ChromaKey(float4 rgba)
   return fullMask;
 }
 
+// Uses Fast Gaussian blur to create a smoother edge to the chroma key.
 float BlurChromaKey(float4 rgba, VertData v_in)
 {
-  if (edge_blur == 0.0) {
+  if (edge_blur == 0) {
     return ChromaKey(rgba);
   }
 
