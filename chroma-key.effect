@@ -1,40 +1,75 @@
 uniform float4x4 ViewProj;
 uniform texture2d image;
 
-
 uniform float3 key_color <
   string label = "Key Color";
   string widget_type = "color";
+  string group = "Chroma Key";
 > = {0.0, 1.0, 0.0};
 
 uniform float similarity <
   string label = "Similarity";
   string widget_type = "slider";
+  string group = "Chroma Key";
   float minimum = 0.0;
-  float maximum = 1.0;
+  float maximum = 0.5;
   float step = 0.001;
-> = 0;
+> = 0.2;
 
 uniform float smoothness <
   string label = "Smoothness";
   string widget_type = "slider";
+  string group = "Chroma Key";
   float minimum = 0.0;
   float maximum = 1.0;
   float step = 0.001;
-> = 0;
+> = 0.1;
 
 uniform float smoothness_power <
   string label = "Smoothness Power";
   string widget_type = "slider";
+  string group = "Chroma Key";
   float minimum = 1.0;
   float maximum = 3.0;
   float step = 0.001;
 > = 1.5;
 
+uniform bool output_alpha <
+  string label = "Output Alpha";
+  string group = "Chroma Key";
+> = false;
+
+uniform float gain <
+  string label = "Gain";
+  string widget_type = "slider";
+  string group = "Refine Matte";
+  float minimum = 1.0;
+  float maximum = 3.0;
+  float step = 0.001;
+> = 1.0;
+
+uniform float black_point <
+  string label = "Black Point";
+  string widget_type = "slider";
+  string group = "Refine Matte";
+  float minimum = 0.0;
+  float maximum = 1.0;
+  float step = 0.001;
+> = 0.0;
+
+uniform float white_point <
+  string label = "White Point";
+  string widget_type = "slider";
+  string group = "Refine Matte";
+  float minimum = 0.001;
+  float maximum = 1.0;
+  float step = 0.001;
+> = 1.0;
 
 uniform float spill <
-  string label = "Spill Reduction";
+  string label = "Amount";
   string widget_type = "slider";
+  string group = "Spill Reduction";
   float minimum = 0;
   float maximum = 1.0;
   float step = 0.001;
@@ -43,6 +78,7 @@ uniform float spill <
 uniform int type <
   string label = "Type";
   string widget_type = "select";
+  string group = "Spill Reduction";
   int option_0_value = 0;
   string option_0_label = "Average";
   int option_1_value = 1;
@@ -54,6 +90,7 @@ uniform int type <
 uniform float luminance_correction <
   string label = "Luminance Correction";
   string widget_type = "slider";
+  string group = "Spill Reduction";
   float minimum = 0;
   float maximum = 1;
   float step = 0.001;
@@ -62,8 +99,8 @@ uniform float luminance_correction <
 uniform float3 luminance_color <
   string label = "Luminance Color";
   string widget_type = "color";
+  string group = "Spill Reduction";
 > = {1.0, 0.5, 1.0};
-
 
 uniform float2 uv_pixel_interval;
 
@@ -112,7 +149,7 @@ float3 ApplyHue(float3 col, float hueAdjust)
   float3 sqrt3_3 = float3(0.57735, 0.57735, 0.57735);
   float normalizedHue = hueAdjust * 6.28318530718;
   float cosAngle = cos(normalizedHue);
-  // Rodrigues' rotation formula
+  // Rodrigues' rotation formula: https://gist.github.com/mairod/a75e7b44f68110e1576d77419d608786
   return col * cosAngle + cross(sqrt3_3, col) * sin(normalizedHue) + sqrt3_3 * dot(sqrt3_3, col) * (1.0 - cosAngle);
 }
 
@@ -130,6 +167,9 @@ float4 PSDespill(VertData v_in) : TARGET
     float chromaDist = distance(RGBtoUV(rgba.rgb), RGBtoUV(key_color));
     float baseMask = chromaDist - similarity;
     float fullMask = pow(clamp(baseMask / smoothness, 0.0, 1.0), smoothness_power);
+    if (white_point < 1.0 || black_point > 0.0 || gain != 1.0) {
+      fullMask = lerp(-black_point, 1 / white_point, fullMask) * gain;
+    }
     rgba.a = fullMask;
 
     // Shift so the chroma hue (that we want to remove) is always red.
@@ -156,9 +196,12 @@ float4 PSDespill(VertData v_in) : TARGET
 
     float3 difference = abs(rgb - rgba.rgb);
     // Calculate luminance according to BT.709
-    float luminance =  luminance_correction * ((difference.r) * 0.2126 + (difference.g) * 0.7152 + (difference.b) * 0.0722);
+    float luminance = luminance_correction * dot(difference, float3(0.2126, 0.7152, 0.0722));
     rgba.rgb = rgb + luminance * luminance_color;
 
+    if (output_alpha) {
+      rgba.rgb = rgba.a;
+    }
     return rgba;
   }
 
