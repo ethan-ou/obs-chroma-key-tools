@@ -34,19 +34,19 @@ uniform float smoothness_power <
   float step = 0.001;
 > = 1.5;
 
+uniform float edge_blur <
+    string label = "Edge Blur";
+    string widget_type = "slider";
+    string group = "Chroma Key";
+    float minimum = 0.0;
+    float maximum = 10.0;
+    float step = 1.0;
+> = 2.0;
+
 uniform bool output_alpha <
   string label = "Output Alpha";
   string group = "Chroma Key";
 > = false;
-
-uniform float gain <
-  string label = "Gain";
-  string widget_type = "slider";
-  string group = "Refine Matte";
-  float minimum = 1.0;
-  float maximum = 3.0;
-  float step = 0.001;
-> = 1.0;
 
 uniform float black_point <
   string label = "Black Point";
@@ -75,7 +75,7 @@ uniform float spill <
   float step = 0.001;
 > = 0.666;
 
-uniform int type <
+uniform int spill_type <
   string label = "Type";
   string widget_type = "select";
   string group = "Spill Reduction";
@@ -88,7 +88,7 @@ uniform int type <
 > = 0;
 
 uniform float luminance_correction <
-  string label = "Luminance Correction";
+  string label = "Lum Correction";
   string widget_type = "slider";
   string group = "Spill Reduction";
   float minimum = 0;
@@ -97,12 +97,13 @@ uniform float luminance_correction <
 > = 0.666;
 
 uniform float3 luminance_color <
-  string label = "Luminance Color";
+  string label = "Lum Color";
   string widget_type = "color";
   string group = "Spill Reduction";
 > = {1.0, 0.5, 1.0};
 
 uniform float2 uv_pixel_interval;
+uniform float2 uv_size;
 
 sampler_state textureSampler {
   Filter = Linear;
@@ -153,35 +154,64 @@ float3 ApplyHue(float3 col, float hueAdjust)
   return col * cosAngle + cross(sqrt3_3, col) * sin(normalizedHue) + sqrt3_3 * dot(sqrt3_3, col) * (1.0 - cosAngle);
 }
 
-float2 RGBtoUV(float3 rgb) {
+float2 RGBtoUV(float3 rgb) 
+{
   return float2(
     rgb.r * -0.169 + rgb.g * -0.331 + rgb.b *  0.5    + 0.5,
     rgb.r *  0.5   + rgb.g * -0.419 + rgb.b * -0.081  + 0.5
   );
 }
 
+float ChromaKey(float4 rgba)
+{
+  float chromaDist = distance(RGBtoUV(rgba.rgb), RGBtoUV(key_color));
+  float baseMask = chromaDist - similarity;
+  float fullMask = pow(clamp(baseMask / smoothness, 0.0, 1.0), smoothness_power);
+  if (black_point > 0.0 || white_point < 1.0) {
+    fullMask = lerp(-black_point, 1 / white_point, fullMask);
+  }
+  return fullMask;
+}
+
+float BlurChromaKey(float4 rgba, VertData v_in)
+{
+  if (edge_blur == 0.0) {
+    return ChromaKey(rgba);
+  }
+
+  float Pi = 6.28318530718; // Pi*2
+  float Quality = 2.0;
+  float Directions = 8.0;
+
+  float transparent = ChromaKey(rgba);
+  int count = 1;
+
+  [loop] for(float d = 0.0; d < Pi; d += Pi / Directions) {
+    [loop] for(float i = 1.0 / Quality; i <= 1.0; i += 1.0 / Quality) {
+      float sc = ChromaKey(image.Sample(textureSampler, v_in.uv + float2(cos(d), sin(d)) * edge_blur * i / uv_size));
+      transparent += sc;
+      count++;
+    }
+  }
+
+  return transparent / count;
+}
+
 float4 PSDespill(VertData v_in) : TARGET
   {
     float4 rgba = image.Sample(textureSampler, v_in.uv);
-
-    float chromaDist = distance(RGBtoUV(rgba.rgb), RGBtoUV(key_color));
-    float baseMask = chromaDist - similarity;
-    float fullMask = pow(clamp(baseMask / smoothness, 0.0, 1.0), smoothness_power);
-    if (white_point < 1.0 || black_point > 0.0 || gain != 1.0) {
-      fullMask = lerp(-black_point, 1 / white_point, fullMask) * gain;
-    }
-    rgba.a = fullMask;
+    rgba.a = BlurChromaKey(rgba, v_in);
 
     // Shift so the chroma hue (that we want to remove) is always red.
     float hue = GetHue(key_color);
     float3 normalizedRGB = ApplyHue(rgba.rgb, -hue);
 
     float v;
-    if (type == 1) {
+    if (spill_type == 1) {
       // Maximum
       v = max(normalizedRGB.g, normalizedRGB.b);
       if (normalizedRGB.r > v) normalizedRGB.r = v;
-    } else if (type == 2) {
+    } else if (spill_type == 2) {
       // Minimum
       v = min(normalizedRGB.g, normalizedRGB.b);
       if (normalizedRGB.r > v) normalizedRGB.r = v;
