@@ -32,12 +32,24 @@ uniform float smoothness_power <
 > = 1.5;
 
 uniform int edge_blur <
-    string label = "Edge Blur";
-    string widget_type = "slider";
-    string group = "Chroma Key";
-    int minimum = 0;
-    int maximum = 10;
-> = 1;
+  string label = "Edge Blur";
+  string widget_type = "slider";
+  string group = "Chroma Key";
+  int minimum = 0;
+  int maximum = 25;
+> = 2;
+
+uniform int blur_quality <
+  string label = "Blur Quality";
+  string widget_type = "select";
+  string group = "Chroma Key";
+  int option_0_value = 0;
+  string option_0_label = "Fast";
+  int option_1_value = 1;
+  string option_1_label = "Balanced";
+  int option_2_value = 2;
+  string option_2_label = "Quality";
+> = 0;
 
 uniform bool output_alpha <
   string label = "Output Alpha";
@@ -136,34 +148,41 @@ float2 RGBtoUV(float3 rgb)
   );
 }
 
-float ChromaKey(float4 rgba)
+float ChromaKey(float4 rgba, float2 key)
 {
-  float chromaDist = distance(RGBtoUV(rgba.rgb), RGBtoUV(key_color));
+  float chromaDist = distance(RGBtoUV(rgba.rgb), key);
   float baseMask = chromaDist - similarity;
-  float fullMask = pow(clamp(baseMask / smoothness, 0.0, 1.0), smoothness_power);
-  if (black_point > 0.0 || white_point < 1.0) {
-    fullMask = lerp(-black_point, 1 / white_point, fullMask);
-  }
-  return fullMask;
+  return pow(clamp(baseMask / smoothness, 0.0, 1.0), smoothness_power);
 }
 
-// Uses Fast Gaussian blur to create a smoother edge to the chroma key.
-float BlurChromaKey(float4 rgba, VertData v_in)
+// Uses Gaussian blur to create a smoother edge to the chroma key.
+float BlurChromaKey(float4 rgba, float2 key, VertData v_in)
 {
   if (edge_blur == 0) {
-    return ChromaKey(rgba);
+    return ChromaKey(rgba, key);
   }
 
-  float Pi = 6.28318530718; // Pi*2
-  float quality = 2.0;
-  float directions = 8.0;
+  float quality;
+  float directions;
+  if (blur_quality == 1) {
+    quality = 4.0;
+    directions = 16.0;
+  } else if (blur_quality == 2) {
+    quality = 6.0;
+    directions = 24.0;
+  } else {
+    quality = 2.0;
+    directions = 8.0;
+  }
 
-  float transparent = ChromaKey(rgba);
+  float PI = 6.28318530718;
+
+  float transparent = ChromaKey(rgba, key);
   int count = 1;
 
-  [loop] for(float d = 0.0; d < Pi; d += Pi / directions) {
+  [loop] for(float d = 0.0; d < PI; d += PI / directions) {
     [loop] for(float i = 1.0 / quality; i <= 1.0; i += 1.0 / quality) {
-      float sc = ChromaKey(image.Sample(textureSampler, v_in.uv + float2(cos(d), sin(d)) * edge_blur * i / uv_size));
+      float sc = ChromaKey(image.Sample(textureSampler, v_in.uv + float2(cos(d), sin(d)) * edge_blur * i / uv_size), key);
       transparent += sc;
       count++;
     }
@@ -175,7 +194,11 @@ float BlurChromaKey(float4 rgba, VertData v_in)
 float4 mainImage(VertData v_in) : TARGET
 {
   float4 rgba = image.Sample(textureSampler, v_in.uv);
-  rgba.a = BlurChromaKey(rgba, v_in);
+
+  rgba.a = BlurChromaKey(rgba, RGBtoUV(key_color), v_in);
+  if (black_point > 0.0 || white_point < 1.0) {
+    rgba.a = lerp(-black_point, 1 / white_point, rgba.a);
+  }
 
   // Shift so the chroma hue (that we want to remove) is always red.
   float hue = GetHue(key_color);
