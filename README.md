@@ -1,17 +1,19 @@
-# OBS Chroma Key Despill Shader
+# OBS Chroma Key Tools
 
-A shader to reduce any colour spill from a chroma key background.
+A bunch of shaders to get better results from chroma keys in OBS. This includes:
+* `chroma-key`: an all-inclusive chroma keyer with edge blur, matte refinement and despill based on OBS's default chroma keyer.
+* `despill`: reduce green, blue or any other color spill from your subject after keying.
+* `edge-color`: add a color to the edge of your key to blend a subject with the background.
+* `edge-shrink`: shrink the edge of a key.
 
-> This code is almost entirely from a [pull request](https://github.com/janpaul123/obs-studio/blob/063fdc0306dfae24d8c084a44e895f30517472a4/plugins/obs-filters/data/chroma_key_filter.effect) made by @janpaul123 to obs-studio. All credit should be his.
+> The despill code is almost entirely from a [pull request](https://github.com/janpaul123/obs-studio/blob/063fdc0306dfae24d8c084a44e895f30517472a4/plugins/obs-filters/data/chroma_key_filter.effect) made by @janpaul123 to obs-studio. All credit should be his.
 
 ## Usage
 
 1. Install [obs-shaderfilter](https://obsproject.com/forum/resources/obs-shaderfilter.1736/) to allow custom shaders to be added to your video sources.
-2. Add two effect filters: a **Chroma Key filter** and a **User-defined shader**.
-3. Set the Chroma Key to your taste with the Key Colour Spill Reduction to 0.
-4. For the User-defined shader, download the despill shader and load it as a text file.
-5. Tweak settings to your liking.
-
+2. Download the shader files and place them wherever you'd like.
+3. Add a user-defined shader in the video effect filters. Then load in the file you'd like to use.
+   
 ![](/images/settings.png)
 
 ## Example
