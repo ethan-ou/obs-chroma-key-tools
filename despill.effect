@@ -38,22 +38,6 @@ uniform float3 luminance_color <
   string widget_type = "color";
 > = {1.0, 0.5, 1.0};
 
-uniform int edge_shrink <
-  string label = "Shrink Edges";
-  string widget_type = "slider";
-  int minimum = 0;
-  int maximum = 20;
-  int step = 1;
-> = 5;
-
-uniform int edge_sharpness <
-  string label = "Shrink Sharpness";
-  string widget_type = "slider";
-  int minimum = 1;
-  int maximum = 20;
-  int step = 1;
-> = 5;
-
 uniform float2 uv_pixel_interval;
 
 sampler_state textureSampler {
@@ -133,21 +117,8 @@ float4 PSDespill(VertData v_in) : TARGET
 
     float3 difference = abs(rgb - rgba.rgb);
     // Calculate luminance according to BT.709
-    float luminance =  luminance_correction * ((difference.r) * 0.2126 + (difference.g) * 0.7152 + (difference.b) * 0.0722);
+    float luminance = luminance_correction * dot(difference, float3(0.2126, 0.7152, 0.0722));
     rgba.rgb = rgb + luminance * luminance_color;
-
-    // Edge Shrink and Sharpness
-    if (edge_shrink > 0) {
-      [loop] for (int x = -edge_shrink; x < edge_shrink; x++) {
-        [loop] for (int y = -edge_shrink; y < edge_shrink; y++) {
-          if (abs(x * x) + abs(y * y) < edge_shrink * edge_shrink) {
-            float4 t = image.Sample(textureSampler, v_in.uv + float2(x * uv_pixel_interval.x, y * uv_pixel_interval.y));
-            if (t.a < 1.0)
-              rgba.a = max(rgba.a - (edge_sharpness * 0.005), 0);
-          }
-        }
-      }
-    }
 
     return rgba;
   }
