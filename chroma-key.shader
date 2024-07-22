@@ -33,23 +33,17 @@ uniform float smoothness_power <
 
 uniform int edge_blur <
   string label = "Edge Blur";
-  string widget_type = "slider";
-  string group = "Chroma Key";
-  int minimum = 0;
-  int maximum = 25;
-> = 2;
-
-uniform int blur_quality <
-  string label = "Blur Quality";
   string widget_type = "select";
   string group = "Chroma Key";
   int option_0_value = 0;
-  string option_0_label = "Fast";
+  string option_0_label = "None";
   int option_1_value = 1;
-  string option_1_label = "Balanced";
+  string option_1_label = "Small";
   int option_2_value = 2;
-  string option_2_label = "Quality";
-> = 0;
+  string option_2_label = "Medium";
+  int option_3_value = 3;
+  string option_3_label = "Large";
+> = 1;
 
 uniform bool output_alpha <
   string label = "Output Alpha";
@@ -162,33 +156,51 @@ float BlurChromaKey(float4 rgba, float2 key, VertData v_in)
     return ChromaKey(rgba, key);
   }
 
-  float quality;
-  float directions;
-  if (blur_quality == 1) {
-    quality = 4.0;
-    directions = 16.0;
-  } else if (blur_quality == 2) {
-    quality = 6.0;
-    directions = 24.0;
-  } else {
-    quality = 2.0;
-    directions = 8.0;
-  }
+  float color = 0.0;
 
-  float PI = 6.28318530718;
+  if (edge_blur == 1) {
+    float offset = 1.3333333333333333;
+    float weight = 0.35294117647058826;
 
-  float transparent = ChromaKey(rgba, key);
-  int count = 1;
-
-  [loop] for(float d = 0.0; d < PI; d += PI / directions) {
-    [loop] for(float i = 1.0 / quality; i <= 1.0; i += 1.0 / quality) {
-      float sc = ChromaKey(image.Sample(textureSampler, v_in.uv + float2(cos(d), sin(d)) * edge_blur * i / uv_size), key);
-      transparent += sc;
-      count++;
+    [loop] for(int i = 0; i < 2; i++) {
+      float2 direction = i == 0 ? float2(float(1), 0.0) : float2(0.0, float(1));
+      color += ChromaKey(image.Sample(textureSampler, v_in.uv), key) * 0.29411764705882354;
+      color += ChromaKey(image.Sample(textureSampler, v_in.uv + ((offset * direction) / uv_size)), key) * 0.35294117647058826;
+      color += ChromaKey(image.Sample(textureSampler, v_in.uv - ((offset * direction) / uv_size)), key) * 0.35294117647058826;
     }
   }
 
-  return transparent / count;
+  if (edge_blur == 2) {
+    float2 offset = float2(1.3846153846, 3.2307692308);
+    float2 weight = float2(0.3162162162, 0.0702702703);
+
+    [loop] for(int i = 0; i < 2; i++) {
+      float2 direction = i == 0 ? float2(float(1), 0.0) : float2(0.0, float(1));
+      
+      color += ChromaKey(image.Sample(textureSampler, v_in.uv), key) * 0.2270270270;
+      [loop] for (int j = 0; j < 2; j++) {
+        color += ChromaKey(image.Sample(textureSampler, v_in.uv + ((offset[j] * direction) / uv_size)), key) * weight[j];
+        color += ChromaKey(image.Sample(textureSampler, v_in.uv - ((offset[j] * direction) / uv_size)), key) * weight[j];
+      }
+    }
+  }
+
+  if (edge_blur == 3) {
+    float3 offset = float3(1.411764705882353, 3.2941176470588234, 5.176470588235294);
+    float3 weight = float3(0.2969069646728344, 0.09447039785044732, 0.010381362401148057);
+
+    [loop] for(int i = 0; i < 2; i++) {
+      float2 direction = i == 0 ? float2(float(1), 0.0) : float2(0.0, float(1));
+      
+      color += ChromaKey(image.Sample(textureSampler, v_in.uv), key) * 0.1964825501511404;
+      [loop] for (int j = 0; j < 3; j++) {
+        color += ChromaKey(image.Sample(textureSampler, v_in.uv + ((offset[j] * direction) / uv_size)), key) * weight[j];
+        color += ChromaKey(image.Sample(textureSampler, v_in.uv - ((offset[j] * direction) / uv_size)), key) * weight[j];
+      }
+    }
+  }
+
+  return color * 0.5;
 }
 
 float4 mainImage(VertData v_in) : TARGET
