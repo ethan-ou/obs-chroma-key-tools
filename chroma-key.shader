@@ -28,6 +28,15 @@ uniform float white_point <
   float step = 0.001;
 > = 1.0;
 
+uniform float detail <
+  string label = "Detail";
+  string widget_type = "slider";
+  string group = "Chroma Key";
+  float minimum = 0.001;
+  float maximum = 3.0;
+  float step = 0.001;
+> = 1.0;
+
 uniform int edge_blur <
   string label = "Edge Blur";
   string widget_type = "select";
@@ -144,7 +153,25 @@ float ChromaKey(float4 rgba)
     a = ChromaKeyR(rgba, key_color) * ChromaKeyR(rgba, secondary_color);
   }
 
-  return clamp(a, 0.0, 1.0);
+  return pow(clamp(a * 1.5, 0.0, 1.0), detail);
+}
+
+float2 MirrorCoords(float2 coords)
+{
+  if (coords[0] < 0.0) {
+    coords[0] = -coords[0];
+  }
+  if (coords[0] > 1.0) {
+    coords[0] = 1.0 - coords[0];
+  }
+  if (coords[1] < 0.0) {
+    coords[1] = -coords[1];
+  }
+  if (coords[1] > 1.0) {
+    coords[1] = 1.0 - coords[1];
+  }
+
+  return coords;
 }
 
 // Uses Gaussian blur to create a smoother edge to the chroma key.
@@ -163,8 +190,8 @@ float BlurChromaKey(float4 rgba, VertData v_in)
     [loop] for(int i = 0; i < 2; i++) {
       float2 direction = i == 0 ? float2(float(1), 0.0) : float2(0.0, float(1));
       color += ChromaKey(image.Sample(textureSampler, v_in.uv)) * 0.29411764705882354;
-      color += ChromaKey(image.Sample(textureSampler, v_in.uv + ((offset * direction) / uv_size))) * 0.35294117647058826;
-      color += ChromaKey(image.Sample(textureSampler, v_in.uv - ((offset * direction) / uv_size))) * 0.35294117647058826;
+      color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv + ((offset * direction) / uv_size)))) * 0.35294117647058826;
+      color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv - ((offset * direction) / uv_size)))) * 0.35294117647058826;
     }
   }
 
@@ -177,8 +204,8 @@ float BlurChromaKey(float4 rgba, VertData v_in)
       
       color += ChromaKey(image.Sample(textureSampler, v_in.uv)) * 0.2270270270;
       [loop] for (int j = 0; j < 2; j++) {
-        color += ChromaKey(image.Sample(textureSampler, v_in.uv + ((offset[j] * direction) / uv_size))) * weight[j];
-        color += ChromaKey(image.Sample(textureSampler, v_in.uv - ((offset[j] * direction) / uv_size))) * weight[j];
+        color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv + ((offset[j] * direction) / uv_size)))) * weight[j];
+        color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv - ((offset[j] * direction) / uv_size)))) * weight[j];
       }
     }
   }
@@ -192,8 +219,8 @@ float BlurChromaKey(float4 rgba, VertData v_in)
       
       color += ChromaKey(image.Sample(textureSampler, v_in.uv)) * 0.1964825501511404;
       [loop] for (int j = 0; j < 3; j++) {
-        color += ChromaKey(image.Sample(textureSampler, v_in.uv + ((offset[j] * direction) / uv_size))) * weight[j];
-        color += ChromaKey(image.Sample(textureSampler, v_in.uv - ((offset[j] * direction) / uv_size))) * weight[j];
+        color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv + ((offset[j] * direction) / uv_size)))) * weight[j];
+        color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv - ((offset[j] * direction) / uv_size)))) * weight[j];
       }
     }
   }
