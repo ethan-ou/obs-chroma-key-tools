@@ -37,19 +37,29 @@ uniform float detail <
   float step = 0.001;
 > = 1.0;
 
-uniform int edge_blur <
-  string label = "Edge Blur";
-  string widget_type = "select";
+
+uniform float denoise <
+  string label = "denoise";
+  string widget_type = "slider";
   string group = "Chroma Key";
-  int option_0_value = 0;
-  string option_0_label = "None";
-  int option_1_value = 1;
-  string option_1_label = "Small";
-  int option_2_value = 2;
-  string option_2_label = "Medium";
-  int option_3_value = 3;
-  string option_3_label = "Large";
-> = 0;
+  float minimum = 0.0;
+  float maximum = 1.0;
+  float step = 0.001;
+> = 0.0;
+
+// uniform int edge_blur <
+//   string label = "Edge Blur";
+//   string widget_type = "select";
+//   string group = "Chroma Key";
+//   int option_0_value = 0;
+//   string option_0_label = "None";
+//   int option_1_value = 1;
+//   string option_1_label = "Small";
+//   int option_2_value = 2;
+//   string option_2_label = "Medium";
+//   int option_3_value = 3;
+//   string option_3_label = "Large";
+// > = 0;
 
 uniform bool output_alpha <
   string label = "Output Alpha";
@@ -104,6 +114,77 @@ uniform float luminance_tint <
   float maximum = 1.0;
   float step = 0.001;
 > = 1.0;
+
+
+float normpdf(float x, float sigma)
+{
+	return 0.39894*exp(-0.5*x*x/(sigma*sigma))/sigma;
+}
+
+float normpdf3(float3 v, float sigma)
+{
+	return 0.39894*exp(-0.5*dot(v,v)/(sigma*sigma))/sigma;
+}
+
+// Since OBS's shader doesn't support longer arrays,
+// unwrap array in if statement.
+float get_kernel(int i)
+{
+    if (i == 0 || i == 14) return 0.031225216;
+    if (i == 1 || i == 13) return 0.033322271;
+    if (i == 2 || i == 12) return 0.035206333;
+    if (i == 3 || i == 11) return 0.036826804;
+    if (i == 4 || i == 10) return 0.038138565;
+    if (i == 5 || i == 9) return 0.039104044;
+    if (i == 6 || i == 8) return 0.039695028;
+    if (i == 7) return 0.039894000;
+    return 0.0;
+}
+
+float2 MirrorCoords(float2 coords)
+{
+  if (coords[0] < 0.0) {
+    coords[0] = -coords[0];
+  }
+  if (coords[0] > 1.0) {
+    coords[0] = 1.0 - coords[0];
+  }
+  if (coords[1] < 0.0) {
+    coords[1] = -coords[1];
+  }
+  if (coords[1] > 1.0) {
+    coords[1] = 1.0 - coords[1];
+  }
+
+  return coords;
+}
+
+
+float4 BilateralFilter(float4 rgba, float2 uv)
+{   
+    const float SIGMA = 10.0;
+    const float MSIZE = 15;
+
+    if (denoise == 0.0) return rgba;
+    
+    const int kSize = (MSIZE - 1) / 2;
+    float4 final_colour = float4(0.0, 0.0, 0.0, 0.0);
+    float Z = 0.0;
+    float4 cc;
+    float factor;
+    float bZ = 1.0 / normpdf(0.0, denoise);
+    //read out the texels
+    for (int i = -kSize; i <= kSize; ++i) {
+        for (int j = -kSize; j <= kSize; ++j) {
+            cc = image.Sample(textureSampler, MirrorCoords(uv + float2(i, j) / uv_size));
+            factor = normpdf3(cc-rgba, denoise) * bZ * get_kernel(kSize + j) * get_kernel(kSize + i);
+            Z += factor;
+            final_colour += factor * cc;
+        }
+    }
+
+   return final_colour/Z;
+}
 
 float GetHueChannel(float3 col)
 {
@@ -170,83 +251,65 @@ float ChromaKey(float4 rgba)
   return pow(clamp(a * 1.5, 0.0, 1.0), detail);
 }
 
-float2 MirrorCoords(float2 coords)
-{
-  if (coords[0] < 0.0) {
-    coords[0] = -coords[0];
-  }
-  if (coords[0] > 1.0) {
-    coords[0] = 1.0 - coords[0];
-  }
-  if (coords[1] < 0.0) {
-    coords[1] = -coords[1];
-  }
-  if (coords[1] > 1.0) {
-    coords[1] = 1.0 - coords[1];
-  }
-
-  return coords;
-}
-
 // Uses Gaussian blur to create a smoother edge to the chroma key.
-float BlurChromaKey(float4 rgba, VertData v_in)
-{
-  if (edge_blur == 0) {
-    return ChromaKey(rgba);
-  }
+// float BlurChromaKey(float4 rgba, VertData v_in)
+// {
+//   if (edge_blur == 0) {
+//     return ChromaKey(rgba);
+//   }
 
-  float color = 0.0;
+//   float color = 0.0;
 
-  if (edge_blur == 1) {
-    float offset = 1.3333333333333333;
-    float weight = 0.35294117647058826;
+//   if (edge_blur == 1) {
+//     float offset = 1.3333333333333333;
+//     float weight = 0.35294117647058826;
 
-    [loop] for(int i = 0; i < 2; i++) {
-      float2 direction = i == 0 ? float2(float(1), 0.0) : float2(0.0, float(1));
-      color += ChromaKey(image.Sample(textureSampler, v_in.uv)) * 0.29411764705882354;
-      color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv + ((offset * direction) / uv_size)))) * 0.35294117647058826;
-      color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv - ((offset * direction) / uv_size)))) * 0.35294117647058826;
-    }
-  }
+//     [loop] for(int i = 0; i < 2; i++) {
+//       float2 direction = i == 0 ? float2(float(1), 0.0) : float2(0.0, float(1));
+//       color += ChromaKey(image.Sample(textureSampler, v_in.uv)) * 0.29411764705882354;
+//       color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv + ((offset * direction) / uv_size)))) * 0.35294117647058826;
+//       color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv - ((offset * direction) / uv_size)))) * 0.35294117647058826;
+//     }
+//   }
 
-  if (edge_blur == 2) {
-    float2 offset = float2(1.3846153846, 3.2307692308);
-    float2 weight = float2(0.3162162162, 0.0702702703);
+//   if (edge_blur == 2) {
+//     float2 offset = float2(1.3846153846, 3.2307692308);
+//     float2 weight = float2(0.3162162162, 0.0702702703);
 
-    [loop] for(int i = 0; i < 2; i++) {
-      float2 direction = i == 0 ? float2(float(1), 0.0) : float2(0.0, float(1));
+//     [loop] for(int i = 0; i < 2; i++) {
+//       float2 direction = i == 0 ? float2(float(1), 0.0) : float2(0.0, float(1));
       
-      color += ChromaKey(image.Sample(textureSampler, v_in.uv)) * 0.2270270270;
-      [loop] for (int j = 0; j < 2; j++) {
-        color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv + ((offset[j] * direction) / uv_size)))) * weight[j];
-        color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv - ((offset[j] * direction) / uv_size)))) * weight[j];
-      }
-    }
-  }
+//       color += ChromaKey(image.Sample(textureSampler, v_in.uv)) * 0.2270270270;
+//       [loop] for (int j = 0; j < 2; j++) {
+//         color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv + ((offset[j] * direction) / uv_size)))) * weight[j];
+//         color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv - ((offset[j] * direction) / uv_size)))) * weight[j];
+//       }
+//     }
+//   }
 
-  if (edge_blur == 3) {
-    float3 offset = float3(1.411764705882353, 3.2941176470588234, 5.176470588235294);
-    float3 weight = float3(0.2969069646728344, 0.09447039785044732, 0.010381362401148057);
+//   if (edge_blur == 3) {
+//     float3 offset = float3(1.411764705882353, 3.2941176470588234, 5.176470588235294);
+//     float3 weight = float3(0.2969069646728344, 0.09447039785044732, 0.010381362401148057);
 
-    [loop] for(int i = 0; i < 2; i++) {
-      float2 direction = i == 0 ? float2(float(1), 0.0) : float2(0.0, float(1));
+//     [loop] for(int i = 0; i < 2; i++) {
+//       float2 direction = i == 0 ? float2(float(1), 0.0) : float2(0.0, float(1));
       
-      color += ChromaKey(image.Sample(textureSampler, v_in.uv)) * 0.1964825501511404;
-      [loop] for (int j = 0; j < 3; j++) {
-        color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv + ((offset[j] * direction) / uv_size)))) * weight[j];
-        color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv - ((offset[j] * direction) / uv_size)))) * weight[j];
-      }
-    }
-  }
+//       color += ChromaKey(image.Sample(textureSampler, v_in.uv)) * 0.1964825501511404;
+//       [loop] for (int j = 0; j < 3; j++) {
+//         color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv + ((offset[j] * direction) / uv_size)))) * weight[j];
+//         color += ChromaKey(image.Sample(textureSampler, MirrorCoords(v_in.uv - ((offset[j] * direction) / uv_size)))) * weight[j];
+//       }
+//     }
+//   }
 
-  return color * 0.5;
-}
+//   return color * 0.5;
+// }
 
 float4 mainImage(VertData v_in) : TARGET
 {
   float4 rgba = image.Sample(textureSampler, v_in.uv);
-
-  rgba.a = BlurChromaKey(rgba, v_in);
+  rgba.a = ChromaKey(BilateralFilter(rgba, v_in.uv));
+  // rgba.a = BlurChromaKey(rgba, v_in);
   if (black_point > 0.0 || white_point < 1.0) {
     rgba.a = lerp(-black_point, 1 / white_point, rgba.a);
   }
