@@ -81,8 +81,8 @@ uniform float spill_hue <
   string label = "Hue Shift";
   string widget_type = "slider";
   string group = "Spill Reduction";
-  float minimum = -0.5;
-  float maximum = 0.5;
+  float minimum = -0.333;
+  float maximum = 0.333;
   float step = 0.001;
 > = 0.0;
 
@@ -118,8 +118,7 @@ float GetHueChannel(float3 col)
 
 float3 GetChannelComplement(float3 col)
 {
-  if (col.g >= max(col.r, col.b))
-  {
+  if (col.g >= max(col.r, col.b)) {
     return float3(1.0, 0.0, 1.0);
   } else if (col.b > max(col.r, col.g)) {
     return float3(1.0, 1.0, 0.0);
@@ -278,7 +277,7 @@ float4 mainImage(VertData v_in) : TARGET
   // Calculate luminance according to BT.709
   float luminance = luminance_correction * dot(difference, float3(0.2126, 0.7152, 0.0722));
   float3 luminance_complement = ApplyHue(GetChannelComplement(key_color), spill_hue);
-  float3 luminance_blend = float3(0.5, 0.5, 0.5) * (1.0 - luminance_tint) + 0.5 * luminance_complement * (luminance_tint);
+  float3 luminance_blend = float3(1.0, 1.0, 1.0) * (1.0 - 0.5 * luminance_tint) + 0.5 * luminance_complement * (0.5 * luminance_tint);
   rgba.rgb = rgb + luminance * luminance_blend;
 
   if (output_alpha) {
