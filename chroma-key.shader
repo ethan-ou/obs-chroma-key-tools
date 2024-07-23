@@ -278,8 +278,8 @@ float4 mainImage(VertData v_in) : TARGET
   // Calculate luminance according to BT.709
   float luminance = luminance_correction * dot(difference, float3(0.2126, 0.7152, 0.0722));
   float3 luminance_complement = ApplyHue(GetChannelComplement(key_color), spill_hue);
-  float3 luminance_color_blend = float3(0.5, 0.5, 0.5) * (1.0 - luminance_tint) + 0.5 * luminance_complement * (luminance_tint);
-  rgba.rgb = rgb + luminance *  luminance_tint;
+  float3 luminance_blend = float3(0.5, 0.5, 0.5) * (1.0 - luminance_tint) + 0.5 * luminance_complement * (luminance_tint);
+  rgba.rgb = rgb + luminance * luminance_blend;
 
   if (output_alpha) {
     rgba.rgb = rgba.a;
