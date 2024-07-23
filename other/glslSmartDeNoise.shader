@@ -26,17 +26,36 @@
 
 //float4 smartDeNoise(sampler2D mainImage, float2 uv, float sigma, float kSigma, float threshold)
 
-uniform float threshold = 1.0;
-uniform float sigma = 1.0;
-uniform float kSigma = 1.0;
+uniform float threshold <
+//   string label = "Spill Reduction";
+  string widget_type = "slider";
+  float minimum = 0;
+  float maximum = 3.0;
+  float step = 0.001;
+> = 1.0;
+
+uniform float sigma <
+//   string label = "Spill Reduction";
+  string widget_type = "slider";
+  float minimum = 0;
+  float maximum = 10.0;
+  float step = 0.001;
+> = 1.0;
+
+uniform float kSigma <
+//   string label = "Spill Reduction";
+  string widget_type = "slider";
+  float minimum = 0;
+  float maximum = 10.0;
+  float step = 0.001;
+> = 1.0;
 
 float4 mainImage(VertData v_in) : TARGET
 {
+    float INV_SQRT_OF_2PI = 0.39894228040143267793994605993439;  // 1.0/SQRT_OF_2PI
+    float INV_PI = 0.31830988618379067153776752674503;
 
-float INV_SQRT_OF_2PI = 0.39894228040143267793994605993439;  // 1.0/SQRT_OF_2PI
-float INV_PI = 0.31830988618379067153776752674503;
-
-    float radius = kSigma*sigma;
+    float radius = kSigma * sigma;
     float radQ = radius * radius;
 
     float invSigmaQx2 = 0.5 / (sigma * sigma);      // 1.0 / (sigma^2 * 2.0)
@@ -49,19 +68,16 @@ float INV_PI = 0.31830988618379067153776752674503;
 
     float zBuff = 0.0;
     float4 aBuff = {0.0,0.0,0.0,0.0};
-    //float2 size = float2(textureSize(mainImage, 0));
 
-int dx = 0;
-int dy = 0;
+    for (float x= -radius; x <= radius; x++) {
+        float pt = sqrt(radQ - x*x);       // pt = yRadius: have circular trend
+        for (float y = -pt; y <= pt; y++) {
+            float2 d = float2(x, y);
+            float blurFactor = exp(-dot(d, d) * invSigmaQx2) * invSigmaQx2PI;
 
-    for (dx=-radius; dx <= radius; dx++) {
-        float pt = sqrt(radQ-dx*dx);       // pt = yRadius: have circular trend
-        for (dy=-pt; dy <= pt; dy++) {
-            float blurFactor = exp( -dot(d , d) * invSigmaQx2 ) * invSigmaQx2PI;
-
-            float4 walkPx = image.Sample(textureSampler, v_in.uv +float2(dx,dy)); // texture(mainImage,uv+d/size);
-            float4 dC = walkPx-centrPx;
-            float deltaFactor = exp( -dot(dC, dC) * invThresholdSqx2) * invThresholdSqrt2PI * blurFactor;
+            float4 walkPx = image.Sample(textureSampler, v_in.uv + (d / uv_size)); // texture(mainImage,uv+d/size);
+            float4 dC = walkPx - centrPx;
+            float deltaFactor = exp(-dot(dC, dC) * invThresholdSqx2) * invThresholdSqrt2PI * blurFactor;
 
             zBuff += deltaFactor;
             aBuff += deltaFactor*walkPx;
