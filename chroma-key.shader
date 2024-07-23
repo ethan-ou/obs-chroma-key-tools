@@ -125,15 +125,12 @@ float2 MirrorCoords(float2 coords)
 float4 BilateralFilterRGB(float4 rgba, float2 uv)
 {   
     if (denoise == 0.0) return rgba;
-    
-    const float SIGMA = 10.0;
-    const float MSIZE = 15;
-    
-    float kernel[MSIZE] = {0.031225216, 0.033322271, 0.035206333, 0.036826804, 0.038138565, 
-                          0.039104044, 0.039695028, 0.039894000, 0.039695028, 0.039104044, 
-                          0.038138565, 0.036826804, 0.035206333, 0.033322271, 0.031225216};
 
-    const int kSize = (MSIZE - 1) / 2;
+    float kernel[15] = {0.031225216, 0.033322271, 0.035206333, 0.036826804, 0.038138565, 
+                        0.039104044, 0.039695028, 0.039894000, 0.039695028, 0.039104044, 
+                        0.038138565, 0.036826804, 0.035206333, 0.033322271, 0.031225216};
+
+    const int kSize = 7;
     float3 final_colour = float3(0.0, 0.0, 0.0);
     float Z = 0.0;
     float3 cc;
@@ -141,12 +138,12 @@ float4 BilateralFilterRGB(float4 rgba, float2 uv)
     float bZ = 1.0 / normpdf(0.0, denoise);
     //read out the texels
     for (int i = -kSize; i <= kSize; ++i) {
-        for (int j = -kSize; j <= kSize; ++j) {
-            cc = image.Sample(textureSampler, MirrorCoords(uv + float2(i, j) / uv_size)).rgb;
-            factor = normpdf3(cc-rgba.rgb, denoise) * bZ * kernel[kSize + j] * kernel[kSize + i];
-            Z += factor;
-            final_colour += factor * cc;
-        }
+      for (int j = -kSize; j <= kSize; ++j) {
+          cc = image.Sample(textureSampler, MirrorCoords(uv + float2(i, j) / uv_size)).rgb;
+          factor = normpdf3(cc-rgba.rgb, denoise) * bZ * kernel[kSize + j] * kernel[kSize + i];
+          Z += factor;
+          final_colour += factor * cc;
+      }
     }
 
    return float4(final_colour/Z, rgba.a);
@@ -170,35 +167,47 @@ float3 ApplyHue(float3 col, float hueAdjust)
   return col * cosAngle + cross(sqrt3_3, col) * sin(normalizedHue) + sqrt3_3 * dot(sqrt3_3, col) * (1.0 - cosAngle);
 }
 
-float ChromaKeyR(float4 rgba, float3 key)
+float ChromaKeyR(float difference, float3 key)
 {
-  float difference = rgba.r - rgba.g * 0.5 - rgba.b * 0.5;
-  return difference <= 0.0 ? 1.0 : 1.0 - difference / (key.r - key.g * 0.5 - key.b * 0.5);
+  return 1.0 - difference / (key.r - key.g * 0.5 - key.b * 0.5);
+}
+
+float ChromaKeyG(float difference, float3 key)
+{
+  return 1.0 - difference / (key.g - key.r * 0.5 - key.b * 0.5);
+}
+
+float ChromaKeyB(float difference, float3 key)
+{
+  return 1.0 - difference / (key.b - key.r * 0.5 - key.g * 0.5);
 }
 
 // https://github.com/NatronGitHub/openfx-misc/blob/294ca3e2c1b18e5aaee0fa8d9c773acb70cee5b2/PIK/PIK.cpp#L1009
 // (Ag-Ar*rw-Ab*gbw)<=0?1:clamp(1-(Ag-Ar*rw-Ab*gbw)/(Bg-Br*rw-Bb*gbw))
-float ChromaKeyG(float4 rgba, float3 key)
-{
-  float difference = rgba.g - rgba.r * 0.5 - rgba.b * 0.5;
-  return difference <= 0.0 ? 1.0 : 1.0 - difference / (key.g - key.r * 0.5 - key.b * 0.5);
-}
-
-float ChromaKeyB(float4 rgba, float3 key)
-{
-  float difference = rgba.b - rgba.r * 0.5 - rgba.g * 0.5;
-  return difference <= 0.0 ? 1.0 : 1.0 - difference / (key.b - key.r * 0.5 - key.g * 0.5);
-}
-
 float ChromaKey(float4 rgba, int channel)
 { 
   float a;
   if (channel == 1) {
-    a = ChromaKeyG(rgba, key_color) * ChromaKeyG(rgba, secondary_color);
+    float difference = rgba.g - rgba.r * 0.5 - rgba.b * 0.5;
+    if (difference <= 0.0) {
+      a = 1.0;
+    } else {
+      a = ChromaKeyG(difference, key_color) * ChromaKeyG(difference, secondary_color);
+    }
   } else if (channel == 2) {
-    a = ChromaKeyB(rgba, key_color) * ChromaKeyB(rgba, secondary_color);
+    float difference = rgba.b - rgba.r * 0.5 - rgba.g * 0.5;
+    if (difference <= 0.0) {
+      a = 1.0;
+    } else {
+      a = ChromaKeyB(difference, key_color) * ChromaKeyB(difference, secondary_color);
+    }
   } else {
-    a = ChromaKeyR(rgba, key_color) * ChromaKeyR(rgba, secondary_color);
+    float difference = rgba.r - rgba.g * 0.5 - rgba.b * 0.5;
+    if (difference <= 0.0) {
+      a = 1.0;
+    } else {
+      a = ChromaKeyR(difference, key_color) * ChromaKeyR(difference, secondary_color);
+    }
   }
 
   // Make default masks 1.5x stronger since mixing two keys leads to
@@ -226,17 +235,17 @@ float4 mainImage(VertData v_in) : TARGET
   float3 normalizedRGB = ApplyHue(rgba.rgb, -hue);
 
   float v;
-  if (spill_type == 1) {
+  if (spill_type == 0) {
+    // Average
+    v = (normalizedRGB.g + normalizedRGB.b) * 0.5;
+    if (normalizedRGB.r > v) normalizedRGB.r = v;
+  } else if (spill_type == 1) {
     // Maximum
     v = max(normalizedRGB.g, normalizedRGB.b);
     if (normalizedRGB.r > v) normalizedRGB.r = v;
-  } else if (spill_type == 2) {
+  } else {
     // Minimum
     v = min(normalizedRGB.g, normalizedRGB.b);
-    if (normalizedRGB.r > v) normalizedRGB.r = v;
-  } else {
-    // Average
-    v = (normalizedRGB.g + normalizedRGB.b) * 0.5;
     if (normalizedRGB.r > v) normalizedRGB.r = v;
   }
 
