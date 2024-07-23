@@ -77,40 +77,55 @@ uniform int spill_type <
   string option_2_label = "Minimum";
 > = 0;
 
+uniform float spill_hue <
+  string label = "Hue Shift";
+  string widget_type = "slider";
+  string group = "Spill Reduction";
+  float minimum = -0.5;
+  float maximum = 0.5;
+  float step = 0.001;
+> = 0.0;
+
+
 uniform float luminance_correction <
   string label = "Luminance Correction";
   string widget_type = "slider";
   string group = "Spill Reduction";
-  float minimum = 0;
-  float maximum = 1;
+  float minimum = 0.0;
+  float maximum = 1.0;
   float step = 0.001;
 > = 0.666;
 
-uniform float3 luminance_color <
-  string label = "Luminance Color";
-  string widget_type = "color";
+uniform float luminance_tint <
+  string label = "Luminance Tint";
+  string widget_type = "slider";
   string group = "Spill Reduction";
-> = {1.0, 0.5, 1.0};
+  float minimum = 0.0;
+  float maximum = 1.0;
+  float step = 0.001;
+> = 1.0;
 
-float3 GetHue(float3 col)
+float GetHueChannel(float3 col)
 {
-  float minimum = min(min(col.r, col.g), col.b);
-  float maximum = max(max(col.r, col.g), col.b);
-  if (minimum == maximum) {
+  if (col.g >= max(col.r, col.b)) {
+    return 0.333;
+  } else if (col.b > max(col.r, col.g)) {
+    return 0.666;
+  } else {
     return 0.0;
   }
+}
 
-  float hue;
-  if (maximum == col.r) {
-    hue = (col.g - col.b) / (maximum - minimum);
-  } else if (maximum == col.g) {
-    hue = 2.0 + (col.b - col.r) / (maximum - minimum);
+float3 GetChannelComplement(float3 col)
+{
+  if (col.g >= max(col.r, col.b))
+  {
+    return float3(1.0, 0.0, 1.0);
+  } else if (col.b > max(col.r, col.g)) {
+    return float3(1.0, 1.0, 0.0);
   } else {
-    hue = 4.0 + (col.r - col.g) / (maximum - minimum);
+    return float3(0.0, 1.0, 1.0);
   }
-
-  hue = hue * 0.1666666666666667;
-  return hue;
 }
 
 float3 ApplyHue(float3 col, float hueAdjust)
@@ -238,7 +253,7 @@ float4 mainImage(VertData v_in) : TARGET
   }
 
   // Shift so the chroma hue (that we want to remove) is always red.
-  float hue = GetHue(key_color);
+  float hue = GetHueChannel(key_color) + spill_hue;
   float3 normalizedRGB = ApplyHue(rgba.rgb, -hue);
 
   float v;
@@ -262,7 +277,9 @@ float4 mainImage(VertData v_in) : TARGET
   float3 difference = abs(rgb - rgba.rgb);
   // Calculate luminance according to BT.709
   float luminance = luminance_correction * dot(difference, float3(0.2126, 0.7152, 0.0722));
-  rgba.rgb = rgb + luminance * luminance_color;
+  float3 luminance_complement = ApplyHue(GetChannelComplement(key_color), spill_hue);
+  float3 luminance_color_blend = float3(0.5, 0.5, 0.5) * (1.0 - luminance_tint) + 0.5 * luminance_complement * (luminance_tint);
+  rgba.rgb = rgb + luminance *  luminance_tint;
 
   if (output_alpha) {
     rgba.rgb = rgba.a;
