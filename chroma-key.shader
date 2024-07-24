@@ -46,6 +46,11 @@ uniform float denoise <
   float step = 0.001;
 > = 0.0;
 
+uniform bool max_saturation <
+  string label = "Force Key Saturation (Details Mode)";
+  string group = "Chroma Key";
+> = false;
+
 uniform bool output_alpha <
   string label = "Output Alpha";
   string group = "Chroma Key";
@@ -76,8 +81,8 @@ uniform float spill_hue <
   string label = "Hue Shift";
   string widget_type = "slider";
   string group = "Spill Reduction";
-  float minimum = -0.333;
-  float maximum = 0.333;
+  float minimum = -1;
+  float maximum = 1;
   float step = 0.001;
 > = 0.0;
 
@@ -149,6 +154,31 @@ float4 BilateralFilterRGB(float4 rgba, float2 uv)
   return float4(final_colour/Z, rgba.a);
 }
 
+float3 RGBToHSV(float3 c)
+{
+    float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    float4 p = lerp(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
+    float4 q = lerp(float4(p.xyw, c.r), float4(c.r, p.yzx), step(p.x, c.r));
+
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+float3 HSVToRGB(float3 c)
+{
+    float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    float3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+float3 MaxSaturation(float3 c)
+{
+  float3 hsv = RGBToHSV(c);
+  float3 force_saturation = float3(hsv.x, 1.0, hsv.y);
+  return HSVToRGB(force_saturation);
+}
+
 // A blended complementary color between white and the complement
 // e.g. green -> light magenta, blue -> light orange
 float3 GetChannelComplement(int channel)
@@ -174,7 +204,7 @@ float ChromaKeyWeights(float primary, float secondary_1, float secondary_2)
 
 // https://github.com/NatronGitHub/openfx-misc/blob/294ca3e2c1b18e5aaee0fa8d9c773acb70cee5b2/PIK/PIK.cpp#L1009
 // (Ag-Ar*rw-Ab*gbw)<=0?1:clamp(1-(Ag-Ar*rw-Ab*gbw)/(Bg-Br*rw-Bb*gbw))
-float ChromaKey(float4 rgba, int channel)
+float ChromaKey(float4 rgba, int channel, float3 key_1, float3 key_2)
 { 
   float a;
   if (channel == 1) {
@@ -182,8 +212,8 @@ float ChromaKey(float4 rgba, int channel)
     if (difference <= 0.0) {
       a = 1.0;
     } else {
-      float weights = min(ChromaKeyWeights(key_color.g, key_color.r, key_color.b),
-                          ChromaKeyWeights(secondary_color.g, secondary_color.r, secondary_color.b));
+      float weights = min(ChromaKeyWeights(key_1.g, key_1.r, key_1.b),
+                          ChromaKeyWeights(key_2.g, key_2.r, key_2.b));
       a = weights == 0.0 ? 0.0 : 1.0 - difference / weights;
     }
   } else if (channel == 2) {
@@ -191,8 +221,8 @@ float ChromaKey(float4 rgba, int channel)
     if (difference <= 0.0) {
       a = 1.0;
     } else {
-      float weights = min(ChromaKeyWeights(key_color.b, key_color.r, key_color.g), 
-                          ChromaKeyWeights(secondary_color.b, secondary_color.r, secondary_color.g));
+      float weights = min(ChromaKeyWeights(key_1.b, key_1.r, key_1.g), 
+                          ChromaKeyWeights(key_2.b, key_2.r, key_2.g));
        a = weights == 0.0 ? 0.0 : 1.0 - difference / weights;
     }
   } else {
@@ -200,8 +230,8 @@ float ChromaKey(float4 rgba, int channel)
     if (difference <= 0.0) {
       a = 1.0;
     } else {
-      float weights = min(ChromaKeyWeights(key_color.r, key_color.g, key_color.b), 
-                          ChromaKeyWeights(secondary_color.r, secondary_color.g, secondary_color.b));
+      float weights = min(ChromaKeyWeights(key_1.r, key_1.g, key_1.b), 
+                          ChromaKeyWeights(key_2.r, key_2.g, key_2.b));
       a = weights == 0.0 ? 0.0 : 1.0 - difference / weights;
     }
   }
@@ -217,15 +247,18 @@ float4 mainImage(VertData v_in) : TARGET
 {
   float4 rgba = image.Sample(textureSampler, v_in.uv);
   int channel = GetChannel(key_color);
-  
-  rgba.a = ChromaKey(BilateralFilterRGB(rgba, v_in.uv), channel);
+
+  rgba.a = ChromaKey(BilateralFilterRGB(rgba, v_in.uv), channel, 
+                     max_saturation ? MaxSaturation(key_color) : key_color, 
+                     max_saturation ? MaxSaturation(secondary_color) : secondary_color);
+
   if (black_point > 0.0 || white_point < 1.0) {
     rgba.a = lerp(-black_point, 1 / white_point, rgba.a);
   }
 
   // Shift so the chroma hue (that we want to remove) is always red.
   // Multiply channel by 0.333 since red = 0deg, green = 120deg, blue = 240deg
-  float hue = channel * 0.333 + spill_hue;
+  float hue = channel * 0.333 + spill_hue * 0.1;
   float3 normalizedRGB = ApplyHue(rgba.rgb, -hue);
 
   float v;
@@ -248,12 +281,13 @@ float4 mainImage(VertData v_in) : TARGET
 
   // Calculate luminance according to BT.709
   float luminance = luminance_correction * dot(abs(rgb - rgba.rgb), float3(0.2126, 0.7152, 0.0722));
-  float3 luminance_complement = ApplyHue(GetChannelComplement(channel), spill_hue);
+  float3 luminance_complement = ApplyHue(GetChannelComplement(channel), spill_hue * 0.1);
   float3 luminance_blend = lerp(float3(1.0, 1.0, 1.0), luminance_complement, luminance_tint);
   rgba.rgb = rgb + luminance * luminance_blend;
 
   if (output_alpha) {
     rgba.rgb = rgba.a;
+    rgba.a = 1.0;
   }
   return rgba;
 }
