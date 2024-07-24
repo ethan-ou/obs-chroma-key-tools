@@ -124,29 +124,29 @@ float2 MirrorCoords(float2 coords)
 // Adapted from: https://www.shadertoy.com/view/4dfGDH
 float4 BilateralFilterRGB(float4 rgba, float2 uv)
 {   
-    if (denoise == 0.0) return rgba;
+  if (denoise == 0.0) return rgba;
 
-    float kernel[15] = {0.031225216, 0.033322271, 0.035206333, 0.036826804, 0.038138565, 
-                        0.039104044, 0.039695028, 0.039894000, 0.039695028, 0.039104044, 
-                        0.038138565, 0.036826804, 0.035206333, 0.033322271, 0.031225216};
+  float kernel[15] = {0.031225216, 0.033322271, 0.035206333, 0.036826804, 0.038138565, 
+                      0.039104044, 0.039695028, 0.039894000, 0.039695028, 0.039104044, 
+                      0.038138565, 0.036826804, 0.035206333, 0.033322271, 0.031225216};
 
-    const int kSize = 7;
-    float3 final_colour = float3(0.0, 0.0, 0.0);
-    float Z = 0.0;
-    float3 cc;
-    float factor;
-    float bZ = 1.0 / normpdf(0.0, denoise);
-    //read out the texels
-    for (int i = -kSize; i <= kSize; ++i) {
-      for (int j = -kSize; j <= kSize; ++j) {
-          cc = image.Sample(textureSampler, MirrorCoords(uv + float2(i, j) / uv_size)).rgb;
-          factor = normpdf3(cc-rgba.rgb, denoise) * bZ * kernel[kSize + j] * kernel[kSize + i];
-          Z += factor;
-          final_colour += factor * cc;
-      }
+  const int kSize = 7;
+  float3 final_colour = float3(0.0, 0.0, 0.0);
+  float Z = 0.0;
+  float3 cc;
+  float factor;
+  float bZ = 1.0 / normpdf(0.0, denoise);
+  //read out the texels
+  for (int i = -kSize; i <= kSize; ++i) {
+    for (int j = -kSize; j <= kSize; ++j) {
+        cc = image.Sample(textureSampler, MirrorCoords(uv + float2(i, j) / uv_size)).rgb;
+        factor = normpdf3(cc-rgba.rgb, denoise) * bZ * kernel[kSize + j] * kernel[kSize + i];
+        Z += factor;
+        final_colour += factor * cc;
     }
-
-   return float4(final_colour/Z, rgba.a);
+  }
+  if (Z == 0.0) return rgba;
+  return float4(final_colour/Z, rgba.a);
 }
 
 // A blended complementary color between white and the complement
