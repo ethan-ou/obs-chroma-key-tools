@@ -28,15 +28,6 @@ uniform float white_point <
   float step = 0.001;
 > = 1.0;
 
-uniform float sharpness <
-  string label = "Sharpness";
-  string widget_type = "slider";
-  string group = "Chroma Key";
-  float minimum = 0.001;
-  float maximum = 3.0;
-  float step = 0.001;
-> = 1.0;
-
 uniform float denoise <
   string label = "Denoise";
   string widget_type = "slider";
@@ -167,19 +158,9 @@ float3 ApplyHue(float3 col, float hueAdjust)
   return col * cosAngle + cross(sqrt3_3, col) * sin(normalizedHue) + sqrt3_3 * dot(sqrt3_3, col) * (1.0 - cosAngle);
 }
 
-float ChromaKeyR(float difference, float3 key)
+float ChromaKeyWeights(float primary, float secondary_1, float secondary_2)
 {
-  return 1.0 - difference / (key.r - key.g * 0.5 - key.b * 0.5);
-}
-
-float ChromaKeyG(float difference, float3 key)
-{
-  return 1.0 - difference / (key.g - key.r * 0.5 - key.b * 0.5);
-}
-
-float ChromaKeyB(float difference, float3 key)
-{
-  return 1.0 - difference / (key.b - key.r * 0.5 - key.g * 0.5);
+  return primary - secondary_1 * 0.5 - secondary_2 * 0.5;
 }
 
 // https://github.com/NatronGitHub/openfx-misc/blob/294ca3e2c1b18e5aaee0fa8d9c773acb70cee5b2/PIK/PIK.cpp#L1009
@@ -188,31 +169,35 @@ float ChromaKey(float4 rgba, int channel)
 { 
   float a;
   if (channel == 1) {
-    float difference = rgba.g - rgba.r * 0.5 - rgba.b * 0.5;
+    float difference = ChromaKeyWeights(rgba.g, rgba.r, rgba.b);
     if (difference <= 0.0) {
       a = 1.0;
     } else {
-      a = ChromaKeyG(difference, key_color) * ChromaKeyG(difference, secondary_color);
+      float weights = min(ChromaKeyWeights(key_color.g, key_color.b, key_color.r),
+                          ChromaKeyWeights(secondary_color.g, secondary_color.b, secondary_color.r));
+      a = weights == 0.0 ? 0.0 : 1.0 - difference / weights;
     }
   } else if (channel == 2) {
-    float difference = rgba.b - rgba.r * 0.5 - rgba.g * 0.5;
+    float difference = ChromaKeyWeights(rgba.b, rgba.r, rgba.g);
     if (difference <= 0.0) {
       a = 1.0;
     } else {
-      a = ChromaKeyB(difference, key_color) * ChromaKeyB(difference, secondary_color);
+      float weights = min(ChromaKeyWeights(key_color.b, key_color.r, key_color.g), 
+                          ChromaKeyWeights(secondary_color.b, secondary_color.r, secondary_color.g));
+       a = weights == 0.0 ? 0.0 : 1.0 - difference / weights;
     }
   } else {
-    float difference = rgba.r - rgba.g * 0.5 - rgba.b * 0.5;
+    float difference = ChromaKeyWeights(rgba.r, rgba.g, rgba.b);
     if (difference <= 0.0) {
       a = 1.0;
     } else {
-      a = ChromaKeyR(difference, key_color) * ChromaKeyR(difference, secondary_color);
+      float weights = min(ChromaKeyWeights(key_color.r, key_color.g, key_color.b), 
+                          ChromaKeyWeights(secondary_color.r, secondary_color.g, secondary_color.b));
+      a = weights == 0.0 ? 0.0 : 1.0 - difference / weights;
     }
   }
 
-  // Make default masks 1.5x stronger since mixing two keys leads to
-  // higher chance of transparency
-  return pow(saturate(a * 1.5), sharpness);
+  return saturate(a);
 }
 
 int GetChannel(float3 col) {
