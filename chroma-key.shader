@@ -28,12 +28,21 @@ uniform float white_point <
   float step = 0.001;
 > = 1.0;
 
+uniform float color_balance <
+  string label = "Color Balance";
+  string widget_type = "slider";
+  string group = "Chroma Key";
+  float minimum = 0.0;
+  float maximum = 1.0;
+  float step = 0.001;
+> = 0.5;
+
 uniform float denoise <
   string label = "Denoise";
   string widget_type = "slider";
   string group = "Chroma Key";
   float minimum = 0.0;
-  float maximum = 1.0;
+  float maximum = 0.5;
   float step = 0.001;
 > = 0.0;
 
@@ -160,7 +169,7 @@ float3 ApplyHue(float3 col, float hueAdjust)
 
 float ChromaKeyWeights(float primary, float secondary_1, float secondary_2)
 {
-  return primary - secondary_1 * 0.5 - secondary_2 * 0.5;
+  return primary - secondary_1 * (1.0 - color_balance) - secondary_2 * color_balance;
 }
 
 // https://github.com/NatronGitHub/openfx-misc/blob/294ca3e2c1b18e5aaee0fa8d9c773acb70cee5b2/PIK/PIK.cpp#L1009
@@ -173,8 +182,8 @@ float ChromaKey(float4 rgba, int channel)
     if (difference <= 0.0) {
       a = 1.0;
     } else {
-      float weights = min(ChromaKeyWeights(key_color.g, key_color.b, key_color.r),
-                          ChromaKeyWeights(secondary_color.g, secondary_color.b, secondary_color.r));
+      float weights = min(ChromaKeyWeights(key_color.g, key_color.r, key_color.b),
+                          ChromaKeyWeights(secondary_color.g, secondary_color.r, secondary_color.b));
       a = weights == 0.0 ? 0.0 : 1.0 - difference / weights;
     }
   } else if (channel == 2) {
