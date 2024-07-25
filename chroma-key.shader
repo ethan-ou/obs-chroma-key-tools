@@ -8,7 +8,14 @@ uniform float3 secondary_color <
   string label = "Secondary Color";
   string widget_type = "color";
   string group = "Chroma Key";
-> = {0.0, 1.0, 0.0};
+> = {0.0, 0.0, 0.0};
+
+uniform float3 tertiary_color <
+  string label = "Tertiary Color";
+  string widget_type = "color";
+  string group = "Chroma Key";
+> = {0.0, 0.0, 0.0};
+
 
 uniform float black_point <
   string label = "Black Point";
@@ -104,17 +111,6 @@ uniform float luminance_tint <
   float step = 0.001;
 > = 1.0;
 
-
-float normpdf(float x, float sigma)
-{
-	return 0.39894*exp(-0.5*x*x/(sigma*sigma))/sigma;
-}
-
-float normpdf3(float3 v, float sigma)
-{
-	return 0.39894*exp(-0.5*dot(v,v)/(sigma*sigma))/sigma;
-}
-
 float2 MirrorCoords(float2 coords)
 {
   coords[0] = coords[0] >= 0.0 && coords[0] <= 1.0 ? coords[0] : 
@@ -134,8 +130,6 @@ float4 sirBirdDenoise(float4 rgba, float2 uv)
   float GOLDEN_ANGLE = 2.3999632; //3PI-sqrt(5)PI
 
   float3 final_color = float3(0.0, 0.0, 0.0);
-  
-  const float sampleRadius = sqrt(float(denoise));
   float2 samplePixel = float2(1.0, 1.0) / uv_size; 
   float3 sampleCenter = image.Sample(textureSampler, uv).rgb;
   
@@ -189,6 +183,17 @@ float3 MaxSaturation(float3 c)
   return HSVToRGB(force_saturation);
 }
 
+int GetChannel(float3 col)
+{
+  return col.g >= max(col.r, col.b) ? 1 : col.b > max(col.r, col.g) ? 2 : 0;
+}
+
+// Calculate luminance according to BT.709
+float Grayscale(float3 c)
+{
+  return dot(c, float3(0.2126, 0.7152, 0.0722));
+}
+
 // A blended complementary color between white and the complement
 // e.g. green -> light magenta, blue -> light orange
 float3 GetChannelComplement(int channel)
@@ -207,58 +212,53 @@ float3 ApplyHue(float3 col, float hueAdjust)
 
 float ChromaKeyWeights(float primary, float secondary_1, float secondary_2)
 {
-  return primary - secondary_1 * (1.0 - color_balance) - secondary_2 * color_balance;
+  float weights = primary - secondary_1 * (1.0 - color_balance) - secondary_2 * color_balance;
+  return weights <= 0.0 ? 0.0 : weights;
 }
 
 // https://github.com/NatronGitHub/openfx-misc/blob/294ca3e2c1b18e5aaee0fa8d9c773acb70cee5b2/PIK/PIK.cpp#L1009
 // (Ag-Ar*rw-Ab*gbw)<=0?1:clamp(1-(Ag-Ar*rw-Ab*gbw)/(Bg-Br*rw-Bb*gbw))
-float ChromaKey(float4 rgba, int channel, float3 key_1, float3 key_2)
-{ 
-  float a;
+float ChromaKey(float4 rgba, float3 key)
+{
+  float channel = GetChannel(key);
   if (channel == 1) {
     float difference = ChromaKeyWeights(rgba.g, rgba.r, rgba.b);
-    if (difference <= 0.0) {
-      a = 1.0;
-    } else {
-      float weights = min(ChromaKeyWeights(key_1.g, key_1.r, key_1.b),
-                          ChromaKeyWeights(key_2.g, key_2.r, key_2.b));
-      a = weights == 0.0 ? 0.0 : 1.0 - difference / weights;
-    }
+    if (difference <= 0.0) return 1.0;
+
+    float weights = ChromaKeyWeights(key.g, key.r, key.b);
+    if (weights == 0.0) return 1.0;
+
+    return saturate(1.0 - difference / weights);
   } else if (channel == 2) {
     float difference = ChromaKeyWeights(rgba.b, rgba.r, rgba.g);
-    if (difference <= 0.0) {
-      a = 1.0;
-    } else {
-      float weights = min(ChromaKeyWeights(key_1.b, key_1.r, key_1.g), 
-                          ChromaKeyWeights(key_2.b, key_2.r, key_2.g));
-       a = weights == 0.0 ? 0.0 : 1.0 - difference / weights;
-    }
+    if (difference <= 0.0) return 1.0;
+
+    float weights = ChromaKeyWeights(key.b, key.r, key.g);
+    if (weights == 0.0) return 1.0;
+    
+    return saturate(1.0 - difference / weights);
   } else {
     float difference = ChromaKeyWeights(rgba.r, rgba.g, rgba.b);
-    if (difference <= 0.0) {
-      a = 1.0;
-    } else {
-      float weights = min(ChromaKeyWeights(key_1.r, key_1.g, key_1.b), 
-                          ChromaKeyWeights(key_2.r, key_2.g, key_2.b));
-      a = weights == 0.0 ? 0.0 : 1.0 - difference / weights;
-    }
+    if (difference <= 0.0) return 1.0;
+
+    float weights = ChromaKeyWeights(key.r, key.g, key.b);
+    if (weights == 0.0) return 1.0;
+    
+    return saturate(1.0 - difference / weights);
   }
-
-  return saturate(a);
-}
-
-int GetChannel(float3 col) {
-  return col.g >= max(col.r, col.b) ? 1 : col.b > max(col.r, col.g) ? 2 : 0;
 }
 
 float4 mainImage(VertData v_in) : TARGET
 {
   float4 rgba = image.Sample(textureSampler, v_in.uv);
   int channel = GetChannel(key_color);
-  rgba.a = ChromaKey(sirBirdDenoise(rgba, v_in.uv), channel, 
-                     max_saturation ? MaxSaturation(key_color) : key_color, 
-                     max_saturation ? MaxSaturation(secondary_color) : secondary_color);
 
+  float4 denoise = sirBirdDenoise(rgba, v_in.uv);
+  rgba.a = min(
+              min(ChromaKey(denoise, max_saturation ? MaxSaturation(key_color) : key_color), 
+                  ChromaKey(denoise, max_saturation ? MaxSaturation(secondary_color) : secondary_color)),
+                  ChromaKey(denoise, max_saturation ? MaxSaturation(tertiary_color) : tertiary_color));
+ 
   if (black_point > 0.0 || white_point < 1.0) {
     rgba.a = lerp(-black_point, 1 / white_point, rgba.a);
   }
@@ -286,8 +286,8 @@ float4 mainImage(VertData v_in) : TARGET
   // Now shift the hue back, and interpolate based on the spill value.
   float3 rgb = lerp(rgba.rgb, ApplyHue(normalizedRGB, hue), spill);
 
-  // Calculate luminance according to BT.709
-  float luminance = luminance_correction * dot(abs(rgb - rgba.rgb), float3(0.2126, 0.7152, 0.0722));
+
+  float luminance = luminance_correction * Grayscale(abs(rgb - rgba.rgb));
   float3 luminance_complement = ApplyHue(GetChannelComplement(channel), spill_hue * 0.1);
   float3 luminance_blend = lerp(float3(1.0, 1.0, 1.0), luminance_complement, luminance_tint);
   rgba.rgb = rgb + luminance * luminance_blend;
