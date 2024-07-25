@@ -37,14 +37,14 @@ uniform float color_balance <
   float step = 0.001;
 > = 0.5;
 
-uniform float denoise <
+uniform int denoise <
   string label = "Denoise";
   string widget_type = "slider";
   string group = "Chroma Key";
-  float minimum = 0.0;
-  float maximum = 0.5;
-  float step = 0.001;
-> = 0.0;
+  int minimum = 0;
+  int maximum = 100;
+  int step = 1;
+> = 0;
 
 uniform bool max_saturation <
   string label = "Force Key Saturation (Details Mode)";
@@ -126,32 +126,42 @@ float2 MirrorCoords(float2 coords)
   return coords;
 }
 
-// Adapted from: https://www.shadertoy.com/view/4dfGDH
-float4 BilateralFilterRGB(float4 rgba, float2 uv)
-{   
-  if (denoise == 0.0) return rgba;
+// https://www.shadertoy.com/view/7d2SDD
+float4 sirBirdDenoise(float4 rgba, float2 uv)
+{
+  if (denoise == 0) return rgba;
+  float PIXEL_MULTIPLIER = 3.0; // between 1. and 3. (keep low)
+  float GOLDEN_ANGLE = 2.3999632; //3PI-sqrt(5)PI
 
-  float kernel[15] = {0.031225216, 0.033322271, 0.035206333, 0.036826804, 0.038138565, 
-                      0.039104044, 0.039695028, 0.039894000, 0.039695028, 0.039104044, 
-                      0.038138565, 0.036826804, 0.035206333, 0.033322271, 0.031225216};
+  float3 final_color = float3(0.0, 0.0, 0.0);
+  
+  const float sampleRadius = sqrt(float(denoise));
+  float2 samplePixel = float2(1.0, 1.0) / uv_size; 
+  float3 sampleCenter = image.Sample(textureSampler, uv).rgb;
+  
+  float influenceSum = 0.0;
+  float brightnessSum = 0.0;
+  
+  float2 pixelRotated = float2(0.0, 1.0);
+  
+  for (float x = 0.0; x <= float(denoise); x++) {
+      float x_pixel = pixelRotated.x;
+      float y_pixel = pixelRotated.y;
+      pixelRotated.x = x_pixel * cos(GOLDEN_ANGLE) + y_pixel * sin(GOLDEN_ANGLE);
+      pixelRotated.y = x_pixel * -sin(GOLDEN_ANGLE) + y_pixel * cos(GOLDEN_ANGLE);
+      
+      float2 pixelOffset = PIXEL_MULTIPLIER * pixelRotated * sqrt(x) * 0.5 * samplePixel;
+      float3 denoised_color = image.Sample(textureSampler, uv + pixelOffset).rgb;
 
-  const int kSize = 7;
-  float3 final_colour = float3(0.0, 0.0, 0.0);
-  float Z = 0.0;
-  float3 cc;
-  float factor;
-  float bZ = 1.0 / normpdf(0.0, denoise);
-  //read out the texels
-  for (int i = -kSize; i <= kSize; ++i) {
-    for (int j = -kSize; j <= kSize; ++j) {
-        cc = image.Sample(textureSampler, MirrorCoords(uv + float2(i, j) / uv_size)).rgb;
-        factor = normpdf3(cc-rgba.rgb, denoise) * bZ * kernel[kSize + j] * kernel[kSize + i];
-        Z += factor;
-        final_colour += factor * cc;
-    }
+      float pixelInfluence =   
+        pow(saturate(0.5 + 0.5 * dot(normalize(sampleCenter), normalize(denoised_color))), 20.0) * 
+        pow(saturate(1.0 - abs(length(denoised_color) - length(sampleCenter))), 8.0);
+          
+      influenceSum += pixelInfluence;
+      final_color += denoised_color*pixelInfluence;
   }
-  if (Z == 0.0) return rgba;
-  return float4(final_colour/Z, rgba.a);
+  
+  return float4(final_color / influenceSum, rgba.a);
 }
 
 float3 RGBToHSV(float3 c)
@@ -190,11 +200,9 @@ float3 GetChannelComplement(int channel)
 
 float3 ApplyHue(float3 col, float hueAdjust)
 {
-  float3 sqrt3_3 = float3(0.57735, 0.57735, 0.57735);
-  float normalizedHue = hueAdjust * 6.28318530718;
-  float cosAngle = cos(normalizedHue);
-  // Rodrigues' rotation formula: https://gist.github.com/mairod/a75e7b44f68110e1576d77419d608786
-  return col * cosAngle + cross(sqrt3_3, col) * sin(normalizedHue) + sqrt3_3 * dot(sqrt3_3, col) * (1.0 - cosAngle);
+  float3 hsv = RGBToHSV(col);
+  hsv.x += hueAdjust;
+  return HSVToRGB(hsv);
 }
 
 float ChromaKeyWeights(float primary, float secondary_1, float secondary_2)
@@ -247,8 +255,7 @@ float4 mainImage(VertData v_in) : TARGET
 {
   float4 rgba = image.Sample(textureSampler, v_in.uv);
   int channel = GetChannel(key_color);
-
-  rgba.a = ChromaKey(BilateralFilterRGB(rgba, v_in.uv), channel, 
+  rgba.a = ChromaKey(sirBirdDenoise(rgba, v_in.uv), channel, 
                      max_saturation ? MaxSaturation(key_color) : key_color, 
                      max_saturation ? MaxSaturation(secondary_color) : secondary_color);
 
