@@ -126,8 +126,6 @@ float2 MirrorCoords(float2 coords)
 float4 sirBirdDenoise(float4 rgba, float2 uv)
 {
   if (denoise == 0) return rgba;
-  float PIXEL_MULTIPLIER = 3.0; // between 1. and 3. (keep low)
-  float GOLDEN_ANGLE = 2.3999632; //3PI-sqrt(5)PI
 
   float3 final_color = float3(0.0, 0.0, 0.0);
   float2 samplePixel = float2(1.0, 1.0) / uv_size; 
@@ -141,18 +139,18 @@ float4 sirBirdDenoise(float4 rgba, float2 uv)
   for (float x = 0.0; x <= float(denoise); x++) {
       float x_pixel = pixelRotated.x;
       float y_pixel = pixelRotated.y;
-      pixelRotated.x = x_pixel * cos(GOLDEN_ANGLE) + y_pixel * sin(GOLDEN_ANGLE);
-      pixelRotated.y = x_pixel * -sin(GOLDEN_ANGLE) + y_pixel * cos(GOLDEN_ANGLE);
+      pixelRotated.x = x_pixel * -0.73736885799 + y_pixel * 0.67549031618;
+      pixelRotated.y = x_pixel * -0.67549031618 + y_pixel * -0.73736885799;
       
-      float2 pixelOffset = PIXEL_MULTIPLIER * pixelRotated * sqrt(x) * 0.5 * samplePixel;
+      float2 pixelOffset = 1.5 * pixelRotated * sqrt(x) * samplePixel;
       float3 denoised_color = image.Sample(textureSampler, uv + pixelOffset).rgb;
 
       float pixelInfluence =   
         pow(saturate(0.5 + 0.5 * dot(normalize(sampleCenter), normalize(denoised_color))), 20.0) * 
-        pow(saturate(1.0 - abs(length(denoised_color) - length(sampleCenter))), 8.0);
+        pow(saturate(1.0 - abs(length(denoised_color) - length(sampleCenter))), 6.0);
           
       influenceSum += pixelInfluence;
-      final_color += denoised_color*pixelInfluence;
+      final_color += denoised_color * pixelInfluence;
   }
   
   return float4(final_color / influenceSum, rgba.a);
@@ -221,31 +219,26 @@ float ChromaKeyWeights(float primary, float secondary_1, float secondary_2)
 float ChromaKey(float4 rgba, float3 key)
 {
   float channel = GetChannel(key);
+  float difference;
+  float weights;
   if (channel == 1) {
-    float difference = ChromaKeyWeights(rgba.g, rgba.r, rgba.b);
+    difference = ChromaKeyWeights(rgba.g, rgba.r, rgba.b);
     if (difference <= 0.0) return 1.0;
 
-    float weights = ChromaKeyWeights(key.g, key.r, key.b);
-    if (weights == 0.0) return 1.0;
-
-    return saturate(1.0 - difference / weights);
+    weights = ChromaKeyWeights(key.g, key.r, key.b);
   } else if (channel == 2) {
-    float difference = ChromaKeyWeights(rgba.b, rgba.r, rgba.g);
+    difference = ChromaKeyWeights(rgba.b, rgba.r, rgba.g);
     if (difference <= 0.0) return 1.0;
 
-    float weights = ChromaKeyWeights(key.b, key.r, key.g);
-    if (weights == 0.0) return 1.0;
-    
-    return saturate(1.0 - difference / weights);
+    weights = ChromaKeyWeights(key.b, key.r, key.g);
   } else {
-    float difference = ChromaKeyWeights(rgba.r, rgba.g, rgba.b);
+    difference = ChromaKeyWeights(rgba.r, rgba.g, rgba.b);
     if (difference <= 0.0) return 1.0;
 
-    float weights = ChromaKeyWeights(key.r, key.g, key.b);
-    if (weights == 0.0) return 1.0;
-    
-    return saturate(1.0 - difference / weights);
+    weights = ChromaKeyWeights(key.r, key.g, key.b);
   }
+  if (weights == 0.0) return 1.0;
+  return saturate(1.0 - difference / weights);
 }
 
 float4 mainImage(VertData v_in) : TARGET
@@ -286,11 +279,10 @@ float4 mainImage(VertData v_in) : TARGET
   // Now shift the hue back, and interpolate based on the spill value.
   float3 rgb = lerp(rgba.rgb, ApplyHue(normalizedRGB, hue), spill);
 
-
   float luminance = luminance_correction * Grayscale(abs(rgb - rgba.rgb));
   float3 luminance_complement = ApplyHue(GetChannelComplement(channel), spill_hue * 0.1);
-  float3 luminance_blend = lerp(float3(1.0, 1.0, 1.0), luminance_complement, luminance_tint);
-  rgba.rgb = rgb + luminance * luminance_blend;
+  float3 luminance_blend = luminance * lerp(float3(1.0, 1.0, 1.0), luminance_complement, luminance_tint);
+  rgba.rgb = rgb + luminance_blend;
 
   if (output_alpha) {
     rgba.rgb = rgba.a;
