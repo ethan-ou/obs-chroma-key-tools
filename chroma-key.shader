@@ -108,7 +108,7 @@ uniform float luminance_correction <
   string widget_type = "slider";
   string group = "Spill Reduction";
   float minimum = 0.0;
-  float maximum = 1.0;
+  float maximum = 2.0;
   float step = 0.001;
 > = 1.0;
 
