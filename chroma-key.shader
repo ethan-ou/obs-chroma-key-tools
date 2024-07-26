@@ -227,7 +227,7 @@ float ChromaKey(float4 rgba, float3 key)
 {
   float channel = GetChannel(key);
   float difference = channel == 1 ? ChromaKeyWeights(rgba.g, rgba.r, rgba.b) : 
-                     channel == 2 : ChromaKeyWeights(rgba.b, rgba.r, rgba.g) : 
+                     channel == 2 ? ChromaKeyWeights(rgba.b, rgba.r, rgba.g) : 
                                     ChromaKeyWeights(rgba.r, rgba.g, rgba.b);
   if (difference <= 0.0) return 1.0;
 
@@ -278,6 +278,6 @@ float4 mainImage(VertData v_in) : TARGET
     rgba.rgb = rgba.a;
     rgba.a = 1.0;
   }
-  
+
   return rgba;
 }
