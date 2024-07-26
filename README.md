@@ -2,7 +2,7 @@
 
 A bunch of shaders to get better results from chroma keys in OBS. This includes:
 
-- `chroma-key`: an all-inclusive chroma keyer with edge blur, matte refinement and despill based on color difference keyers such as the famous IBK keyer and Fusion's Delta Keyer.
+- `chroma-key`: an all-inclusive chroma keyer with multiple color pickers, denoise and despill based on color difference keyers such as the famous IBK keyer and Fusion's Delta Keyer.
 - `despill`: reduce green, blue or any other color spill from your subject after keying.
 - `edge-color`: add a color to the edge of your key to blend a subject with the background.
 - `edge-shrink`: shrink the edge of a key.
