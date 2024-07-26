@@ -1,8 +1,8 @@
 // https://www.shadertoy.com/view/7d2SDD
 float3 sirBirdDenoise(float2 uv) {
-    int SAMPLES = 80; // HIGHER = NICER = SLOWER
+    int SAMPLES = 20; // HIGHER = NICER = SLOWER
     float DISTRIBUTION_BIAS = 0.0; // between 0. and 1.
-    float PIXEL_MULTIPLIER = 3.0; // between 1. and 3. (keep low)
+    float PIXEL_MULTIPLIER = 2.0; // between 1. and 3. (keep low)
     float INVERSE_HUE_TOLERANCE = 20.0; // (2. - 30.)
 
     float GOLDEN_ANGLE = 2.3999632; //3PI-sqrt(5)PI
