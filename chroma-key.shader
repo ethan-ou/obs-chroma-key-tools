@@ -157,7 +157,7 @@ for (float x = 0.0; x <= float(denoise); x++) {
 
   float pixelInfluence =   
     pow(saturate(0.5 + 0.5 * dot(normalize(sampleCenter), normalize(denoised_color))), 20.0) * 
-    pow(saturate(1.0 - abs(length(denoised_color) - length(sampleCenter))), 6.0);
+    pow(saturate(1.0 - abs(length(denoised_color) - length(sampleCenter))), 8.0);
       
   influenceSum += pixelInfluence;
   final_color += denoised_color * pixelInfluence;
