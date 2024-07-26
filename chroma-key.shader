@@ -80,7 +80,7 @@ uniform float spill <
   float minimum = 0.0;
   float maximum = 1.0;
   float step = 0.001;
-> = 0.666;
+> = 1.0;
 
 uniform int spill_type <
   string label = "Type";
@@ -110,16 +110,13 @@ uniform float luminance_correction <
   float minimum = 0.0;
   float maximum = 1.0;
   float step = 0.001;
-> = 0.666;
-
-uniform float luminance_tint <
-  string label = "Luminance Tint";
-  string widget_type = "slider";
-  string group = "Spill Reduction";
-  float minimum = 0.0;
-  float maximum = 1.0;
-  float step = 0.001;
 > = 1.0;
+
+uniform float3 luminance_tint <
+  string label = "Luminance Tint";
+  string widget_type = "color";
+  string group = "Spill Reduction";
+> = {1.0, 1.0, 1.0};
 
 float2 MirrorCoords(float2 coords)
 {
@@ -229,24 +226,14 @@ float ChromaKeyWeights(float primary, float secondary_1, float secondary_2)
 float ChromaKey(float4 rgba, float3 key)
 {
   float channel = GetChannel(key);
-  float difference;
-  float weights;
-  if (channel == 1) {
-    difference = ChromaKeyWeights(rgba.g, rgba.r, rgba.b);
-    if (difference <= 0.0) return 1.0;
+  float difference = channel == 1 ? ChromaKeyWeights(rgba.g, rgba.r, rgba.b) : 
+                     channel == 2 : ChromaKeyWeights(rgba.b, rgba.r, rgba.g) : 
+                                    ChromaKeyWeights(rgba.r, rgba.g, rgba.b);
+  if (difference <= 0.0) return 1.0;
 
-    weights = ChromaKeyWeights(key.g, key.r, key.b);
-  } else if (channel == 2) {
-    difference = ChromaKeyWeights(rgba.b, rgba.r, rgba.g);
-    if (difference <= 0.0) return 1.0;
-
-    weights = ChromaKeyWeights(key.b, key.r, key.g);
-  } else {
-    difference = ChromaKeyWeights(rgba.r, rgba.g, rgba.b);
-    if (difference <= 0.0) return 1.0;
-
-    weights = ChromaKeyWeights(key.r, key.g, key.b);
-  }
+  float weights = channel == 1 ? ChromaKeyWeights(key.g, key.r, key.b):
+                  channel == 2 ? ChromaKeyWeights(key.b, key.r, key.g):
+                                 ChromaKeyWeights(key.r, key.g, key.b);
   if (weights == 0.0) return 1.0;
   return saturate(1.0 - difference / weights);
 }
@@ -283,8 +270,7 @@ float4 mainImage(VertData v_in) : TARGET
     float3 rgb = lerp(rgba.rgb, ApplyHue(normalizedRGB, hue), spill);
 
     float luminance = luminance_correction * Grayscale(abs(rgb - rgba.rgb));
-    float3 luminance_complement = ApplyHue(GetChannelComplement(channel), spill_hue * 0.1);
-    float3 luminance_blend = lerp(float3(1.0, 1.0, 1.0), luminance_complement, luminance_tint) * luminance;
+    float3 luminance_blend = luminance_tint * luminance;
     rgba.rgb = rgb + luminance_blend;
   }
 
@@ -292,5 +278,6 @@ float4 mainImage(VertData v_in) : TARGET
     rgba.rgb = rgba.a;
     rgba.a = 1.0;
   }
+  
   return rgba;
 }
