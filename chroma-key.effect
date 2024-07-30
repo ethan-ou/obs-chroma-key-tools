@@ -142,6 +142,16 @@ uniform texture2d luminance_background <
   string widget_type = "select";
 >;
 
+uniform bool luminance_background_flip_x <
+  string label = "Flip Background X Axis";
+  string group = "Luminance Correction";
+> = false;
+
+uniform bool luminance_background_flip_y <
+  string label = "Flip Background Y Axis";
+  string group = "Luminance Correction";
+> = false;
+
 sampler_state textureSampler {
 	Filter    = Linear;
 	AddressU  = Mirror;
@@ -159,6 +169,13 @@ VertData VSDefault(VertData v_in)
 	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
 	vert_out.uv  = v_in.uv;
 	return vert_out;
+}
+
+float2 BackgroundFlip(float2 coords)
+{
+  coords[0] = luminance_background_flip_x ? 1.0 - coords[0] : coords[0];
+  coords[1] = luminance_background_flip_y ? 1.0 - coords[1] : coords[1];
+  return coords;
 }
 
 float2 MirrorCoords(float2 coords)
@@ -316,8 +333,8 @@ float4 PSDefault(VertData v_in) : TARGET
       float luminance = Grayscale(abs(rgb - rgba.rgb)) * luminance_amount;
 
       if (luminance_background_enable) {
-        float4 targetRGB = luminance_background.Sample(textureSampler, v_in.uv);
-        rgba.rgb = rgb + (rgba.a < 1.0 ? targetRGB.rgb * luminance * luminance_color : 0.0) * luminance_amount;
+        float4 targetRGB = luminance_background.Sample(textureSampler, BackgroundFlip(v_in.uv));
+        rgba.rgb = rgb + (targetRGB.rgb * luminance * luminance_color) * luminance_amount;
       } else {
         rgba.rgb = rgb + luminance_color * luminance;
       }
