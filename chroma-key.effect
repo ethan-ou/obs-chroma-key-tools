@@ -334,7 +334,7 @@ float4 PSDefault(VertData v_in) : TARGET
 
       if (luminance_background_enable) {
         float4 targetRGB = luminance_background.Sample(textureSampler, BackgroundFlip(v_in.uv));
-        rgba.rgb = rgb + (rgba.a < 1.0 ? targetRGB.rgb * luminance * luminance_color : luminance_color * luminance) * luminance_amount;
+        rgba.rgb = rgb + (rgba.a < 1.0 ? (targetRGB.rgb * luminance) : luminance) * luminance_color * luminance_amount;
       } else {
         rgba.rgb = rgb + luminance_color * luminance;
       }
