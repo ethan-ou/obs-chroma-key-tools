@@ -1,3 +1,11 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+
+uniform float2 uv_offset;
+uniform float2 uv_scale;
+uniform float2 uv_pixel_interval;
+uniform float2 uv_size;
+
 uniform float3 key_color <
   string label = "Key Color";
   string widget_type = "color";
@@ -103,20 +111,55 @@ uniform float spill_hue <
   float step = 0.001;
 > = 0.0;
 
-uniform float luminance_correction <
-  string label = "Luminance Correction";
+uniform bool luminance_enable <
+  string label = "Enable";
+  string group = "Luminance Correction";
+> = true;
+
+uniform float luminance_amount <
+  string label = "Amount";
   string widget_type = "slider";
-  string group = "Spill Reduction";
+  string group = "Luminance Correction";
   float minimum = 0.0;
   float maximum = 2.0;
   float step = 0.001;
 > = 1.0;
 
-uniform float3 luminance_tint <
-  string label = "Luminance Tint";
+uniform float3 luminance_color <
+  string label = "Color";
   string widget_type = "color";
-  string group = "Spill Reduction";
+  string group = "Luminance Correction";
 > = {1.0, 1.0, 1.0};
+
+uniform bool luminance_background_enable <
+  string label = "Multiply Background";
+  string group = "Luminance Correction";
+> = false;
+
+uniform texture2d luminance_background <
+  string label = "Background";
+  string group = "Luminance Correction";
+  string widget_type = "select";
+>;
+
+sampler_state textureSampler {
+	Filter    = Linear;
+	AddressU  = Mirror;
+	AddressV  = Mirror;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
 
 float2 MirrorCoords(float2 coords)
 {
@@ -238,7 +281,7 @@ float ChromaKey(float4 rgba, float3 key)
   return saturate(1.0 - difference / weights);
 }
 
-float4 mainImage(VertData v_in) : TARGET
+float4 PSDefault(VertData v_in) : TARGET
 {
   float4 rgba = image.Sample(textureSampler, v_in.uv);
   if (original_image) return rgba;
@@ -269,9 +312,19 @@ float4 mainImage(VertData v_in) : TARGET
     // Now shift the hue back, and interpolate based on the spill value.
     float3 rgb = lerp(rgba.rgb, ApplyHue(normalizedRGB, hue), spill);
 
-    float luminance = luminance_correction * Grayscale(abs(rgb - rgba.rgb));
-    float3 luminance_blend = luminance_tint * luminance;
-    rgba.rgb = rgb + luminance_blend;
+    if (luminance_enable) {
+      float luminance = Grayscale(abs(rgb - rgba.rgb)) * luminance_amount;
+
+      if (luminance_background_enable) {
+        float4 targetRGB = luminance_background.Sample(textureSampler, v_in.uv);
+        rgba.rgb = rgb + (rgba.a < 1.0 ? targetRGB.rgb * luminance * luminance_color : 0.0) * luminance_amount;
+      } else {
+        rgba.rgb = rgb + luminance_color * luminance;
+      }
+    } else {
+      rgba.rgb = rgb;
+    }
+
   }
 
   if (output_alpha) {
@@ -280,4 +333,13 @@ float4 mainImage(VertData v_in) : TARGET
   }
 
   return rgba;
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSDefault(v_in);
+	}
 }
