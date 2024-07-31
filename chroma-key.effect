@@ -324,15 +324,17 @@ float4 PSDefault(VertData v_in) : TARGET
     // Now shift the hue back, and interpolate based on the spill value.
     float3 rgb = lerp(rgba.rgb, ApplyHue(normalizedRGB, hue), spill);
 
-    float luminance = luminance_correction * Grayscale(abs(rgb - rgba.rgb));
+    float luminance = Grayscale(abs(rgb - rgba.rgb));
     float3 luminance_blend = luminance_tint * luminance;
 
     if (background_enable) {
       float4 targetRGB = background.Sample(textureSampler, BackgroundFlip(v_in.uv));
-      rgba.rgb = rgb * rgba.a + targetRGB * (1.0 - rgba.a) + targetRGB * rgba.a * luminance_blend;
-      rgba.a = 1.0;
+      float3 background_difference = Grayscale(targetRGB.rgb - rgba.rgb);
+
+      rgba.rgb = rgb + background_difference * luminance_correction * (1.0 - rgba.a);
+      // rgba.a = 1.0;
     } else {
-      rgba.rgb = rgb + luminance_blend;
+      rgba.rgb = rgb + luminance_blend * luminance_correction;
     }
 
   }
